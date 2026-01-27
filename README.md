@@ -1,6 +1,6 @@
 # SignWell MCP Server
 
-Bootstrap workspace for a Bun-based Model Context Protocol server that orchestrates SignWell's e-signature workflows. The repository follows the architecture described in `MCP_SERVER_ARCHITECTURE.md` and the milestones tracked in `SIGNWELL_MCP_EXECPLAN.md`.
+Bootstrap workspace for a Bun-based Model Context Protocol server that orchestrates SignWell's e-signature workflows. 
 
 ## Prerequisites
 
@@ -245,7 +245,6 @@ Sample MCP inspector session (sanitized IDs):
 ├── test/               # Bun test suites
 ├── scripts/            # Helper scripts for demos/automation
 ├── build/              # Bundled output (ignored in releases)
-├── SIGNWELL_MCP_*.md   # Project exec plan and workflow guidance
 ├── biome.json          # Biome lint/format configuration
 └── tsconfig.json       # TypeScript compiler configuration
 ```
