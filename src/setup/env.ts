@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 
+import { getConfigRoot, getEnvFilePath, parseEnvFile } from "../config/env-file.ts";
 import { DEFAULT_BASE_URL, DEFAULT_TIMEOUT_MS } from "../config/env.ts";
 
 export type EnvValues = {
@@ -22,35 +23,7 @@ export type EnvWriteResult = {
   wroteFile: boolean;
 };
 
-const OVERRIDE_HOME_ENV = "SIGNWELL_MCP_HOME";
-const DEFAULT_ENV_FILENAME = "env";
-
-export function getConfigRoot(
-  options: { platform?: NodeJS.Platform; homeDir?: string } = {},
-): string {
-  const platform = options.platform ?? process.platform;
-  const custom = process.env[OVERRIDE_HOME_ENV];
-  if (custom) {
-    return path.resolve(custom);
-  }
-
-  const homeDir = options.homeDir ?? os.homedir();
-  if (platform === "win32") {
-    const appData = process.env.APPDATA ?? path.join(homeDir, "AppData", "Roaming");
-    return path.join(appData, "SignWell", "MCP");
-  }
-
-  if (platform === "darwin") {
-    return path.join(homeDir, "Library", "Application Support", "SignWell", "MCP");
-  }
-
-  return path.join(homeDir, ".config", "signwell-mcp");
-}
-
-export function getEnvFilePath(options?: { platform?: NodeJS.Platform; homeDir?: string }): string {
-  const root = getConfigRoot(options);
-  return path.join(root, DEFAULT_ENV_FILENAME);
-}
+export { getConfigRoot, getEnvFilePath } from "../config/env-file.ts";
 
 export async function readExistingEnv(
   filePath: string = getEnvFilePath(),
@@ -105,27 +78,18 @@ export function formatEnv(values: EnvValues): string {
 }
 
 function parseEnvContent(raw: string): Partial<EnvValues> {
+  const pairs = parseEnvFile(raw);
   const result: Partial<EnvValues> = {};
-  const lines = raw.split(/\r?\n/);
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) {
-      continue;
-    }
-    const [key, ...rest] = trimmed.split("=");
-    const value = rest.join("=");
-    switch (key) {
-      case "SIGNWELL_API_KEY":
-        result.apiKey = value;
-        break;
-      case "SIGNWELL_API_BASE_URL":
-        result.baseUrl = value;
-        break;
-      case "SIGNWELL_API_TIMEOUT_MS":
-        result.timeoutMs = Number(value);
-        break;
-      default:
-        break;
+  if (pairs.SIGNWELL_API_KEY) {
+    result.apiKey = pairs.SIGNWELL_API_KEY;
+  }
+  if (pairs.SIGNWELL_API_BASE_URL) {
+    result.baseUrl = pairs.SIGNWELL_API_BASE_URL;
+  }
+  if (pairs.SIGNWELL_API_TIMEOUT_MS) {
+    const parsed = Number(pairs.SIGNWELL_API_TIMEOUT_MS);
+    if (!Number.isNaN(parsed)) {
+      result.timeoutMs = parsed;
     }
   }
   return result;

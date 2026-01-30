@@ -11,6 +11,7 @@ export type SetupRenderContext = {
   repositoryPath: string;
   entryPoint: string;
   runner: Runner;
+  isLocalDev: boolean;
   launchCommand: LaunchCommand;
   environment?: Record<string, string>;
 };
