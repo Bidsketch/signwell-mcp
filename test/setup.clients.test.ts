@@ -86,7 +86,7 @@ describe("setup client snippets", () => {
     const snippet = buildManualSnippet({
       ...context,
       entryPoint: "/repo/index.ts",
-      runner: "bun",
+      runner: "node",
     });
     expect(snippet.snippet).toContain("# POSIX shells");
     expect(snippet.snippet).toContain("# Windows (PowerShell)");

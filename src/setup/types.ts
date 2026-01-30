@@ -1,4 +1,4 @@
-export type Runner = "bun" | "node";
+export type Runner = "node";
 
 export type LaunchCommand = {
   command: string;
