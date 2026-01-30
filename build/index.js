@@ -774,8 +774,7 @@ function psQuote(value) {
 function buildPosixLaunch(envFilePath, entryPoint, runner) {
   const envFile = shellQuote(envFilePath);
   const entry = shellQuote(entryPoint);
-  const runnerCommand = runner === "bun" ? `bun run ${entry}` : `node ${entry}`;
-  return `set -a && . ${envFile} && set +a && ${runnerCommand}`;
+  return `set -a && . ${envFile} && set +a && node ${entry}`;
 }
 function buildPowerShellLaunch(envFilePath, entryPoint, runner) {
   const envFile = psQuote(envFilePath);
@@ -795,8 +794,7 @@ function buildPowerShellLaunch(envFilePath, entryPoint, runner) {
     "  }",
     "}"
   ];
-  const runnerCommand = runner === "bun" ? `bun run ${entry}` : `node ${entry}`;
-  scriptParts.push(runnerCommand);
+  scriptParts.push(`node ${entry}`);
   return scriptParts.join("; ");
 }
 function buildLaunchCommand(envFilePath, entryPoint, runner) {
@@ -962,7 +960,7 @@ ${envNotes}` : snippetLines,
 
 // src/setup/index.ts
 var HELP_TEXT = `Usage:
-  signwell-mcp setup [options]        (installed via npm or bunx)
+  signwell-mcp setup [options]        (installed via npm or npx)
   node build/index.js setup [options] (from a local clone)
 
 Options:
@@ -1030,11 +1028,11 @@ async function runSetup(args, options = {}) {
   const entryResolution = resolveEntryPoint();
   const repositoryPath = entryResolution?.repositoryPath ?? process6.cwd();
   const runner = entryResolution?.runner ?? "node";
-  const entryPoint = entryResolution?.entryPoint ?? path6.resolve(repositoryPath, runner === "bun" ? "src/index.ts" : "build/index.js");
+  const entryPoint = entryResolution?.entryPoint ?? path6.resolve(repositoryPath, "build/index.js");
   const launchEnvironment = resolveLaunchEnvironment(flags);
   if (!fs5.existsSync(entryPoint)) {
     console.warn(
-      `[SignWell MCP] Build output not found at ${entryPoint}. Run "bun run build" before configuring MCP clients.`
+      `[SignWell MCP] Build output not found at ${entryPoint}. Run "npm run build" before configuring MCP clients.`
     );
   }
   const context = {
@@ -1287,9 +1285,9 @@ function resolveLocalSourceEntry() {
     return void 0;
   }
   return {
-    entryPoint: entryPath,
+    entryPoint: path6.resolve(path6.dirname(entryPath), "..", "build", "index.js"),
     repositoryPath: inferRepositoryPath(entryPath),
-    runner: "bun"
+    runner: "node"
   };
 }
 function resolveLocalBuildEntry() {
