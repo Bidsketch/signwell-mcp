@@ -23,7 +23,7 @@ import { buildManualSnippet } from "./manual.ts";
 import type { ClientWriteResult, Runner, SetupRenderContext } from "./types.ts";
 
 const HELP_TEXT = `Usage:
-  signwell-mcp setup [options]        (installed via npm or bunx)
+  signwell-mcp setup [options]        (installed via npm or npx)
   node build/index.js setup [options] (from a local clone)
 
 Options:
@@ -127,13 +127,12 @@ export async function runSetup(args: string[], options: SetupOptions = {}): Prom
   const repositoryPath = entryResolution?.repositoryPath ?? process.cwd();
   const runner = entryResolution?.runner ?? "node";
   const entryPoint =
-    entryResolution?.entryPoint ??
-    path.resolve(repositoryPath, runner === "bun" ? "src/index.ts" : "build/index.js");
+    entryResolution?.entryPoint ?? path.resolve(repositoryPath, "build/index.js");
   const launchEnvironment = resolveLaunchEnvironment(flags);
 
   if (!fs.existsSync(entryPoint)) {
     console.warn(
-      `[SignWell MCP] Build output not found at ${entryPoint}. Run "bun run build" before configuring MCP clients.`,
+      `[SignWell MCP] Build output not found at ${entryPoint}. Run "npm run build" before configuring MCP clients.`,
     );
   }
   const context: SetupRenderContext = {
@@ -475,9 +474,9 @@ function resolveLocalSourceEntry(): EntryPointResolution | undefined {
     return undefined;
   }
   return {
-    entryPoint: entryPath,
+    entryPoint: path.resolve(path.dirname(entryPath), "..", "build", "index.js"),
     repositoryPath: inferRepositoryPath(entryPath),
-    runner: "bun",
+    runner: "node",
   };
 }
 

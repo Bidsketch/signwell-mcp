@@ -15,8 +15,7 @@ function psQuote(value: string): string {
 export function buildPosixLaunch(envFilePath: string, entryPoint: string, runner: Runner): string {
   const envFile = shellQuote(envFilePath);
   const entry = shellQuote(entryPoint);
-  const runnerCommand = runner === "bun" ? `bun run ${entry}` : `node ${entry}`;
-  return `set -a && . ${envFile} && set +a && ${runnerCommand}`;
+  return `set -a && . ${envFile} && set +a && node ${entry}`;
 }
 
 export function buildPowerShellLaunch(
@@ -41,8 +40,7 @@ export function buildPowerShellLaunch(
     "  }",
     "}",
   ];
-  const runnerCommand = runner === "bun" ? `bun run ${entry}` : `node ${entry}`;
-  scriptParts.push(runnerCommand);
+  scriptParts.push(`node ${entry}`);
   return scriptParts.join("; ");
 }
 
