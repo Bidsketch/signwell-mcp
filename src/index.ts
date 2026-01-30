@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -140,7 +141,7 @@ function isEntryPoint(): boolean {
   // Resolve both to absolute paths to handle relative invocations (e.g., ./build/index.js)
   try {
     const scriptPath = fileURLToPath(import.meta.url);
-    const invokedPath = path.resolve(process.argv[1]);
+    const invokedPath = realpathSync(path.resolve(process.argv[1]));
     return invokedPath === scriptPath;
   } catch {
     return false;

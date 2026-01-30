@@ -16,15 +16,32 @@ or flattened content, SignWell cannot detect them and "fields": [] will be retur
 
 1. **Use text drawing methods** - e.g., \`canvas.drawString()\` in ReportLab, not image embedding
 2. **Use standard fonts** - Stick to built-in PDF fonts (Helvetica, Times, Courier) or properly embedded fonts
-3. **Verify text is selectable** - Open the PDF and try to select/copy the text tag with your mouse
-4. **Do NOT flatten or rasterize** - Avoid converting text to outlines or images
+3. **Use FlateDecode only** - Do NOT use ASCII85Decode or other exotic stream filters. Use only FlateDecode compression. SignWell may not parse PDFs with dual-filter encoding (e.g. ASCII85Decode + FlateDecode).
+4. **MANDATORY: Render text tags in WHITE (invisible) text** - You MUST set the text color to white before drawing any text tag. Tags rendered in black or any visible color will appear as ugly raw text to signers. Use white: \`setFillColorRGB(1, 1, 1)\` in ReportLab, \`doc.fillColor('white')\` in PDFKit, \`doc.setTextColor(255, 255, 255)\` in jsPDF. Always reset to black after drawing the tag. SignWell will still detect and parse white text — it reads the PDF text layer regardless of color.
+5. **Do NOT flatten or rasterize** - Avoid converting text to outlines or images
 
-### How to verify your PDF has valid text tags:
-1. Open the PDF in any PDF viewer
-2. Try to SELECT the text "{{signature:1:y}}" with your mouse
-3. Try to COPY the selected text
-4. If you can select and copy it as text, SignWell can parse it
-5. If you cannot select it (it's an image or graphic), SignWell will NOT detect it
+### ReportLab-specific instructions:
+
+**REMINDER: ALL text tags MUST use white text color. Never draw tags in black.**
+
+\`\`\`python
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+
+c = canvas.Canvas("output.pdf", pagesize=letter)
+# IMPORTANT: Set compression to FlateDecode only (no ASCII85)
+c._doc.encoding = "FlateDecode"
+# Draw visible content normally
+c.setFont("Helvetica", 12)
+c.setFillColorRGB(0, 0, 0)  # Black text for visible content
+c.drawString(72, 700, "Parent/Guardian Signature:")
+# Draw text tags in WHITE so they are invisible but parseable
+c.setFillColorRGB(1, 1, 1)  # White text for tags
+c.setFont("Helvetica", 10)
+c.drawString(230, 700, "{{signature:1:y}}")
+c.setFillColorRGB(0, 0, 0)  # Reset to black
+c.save()
+\`\`\`
 
 ### Common mistakes that break text tags:
 - Rendering text as an image/screenshot
@@ -32,6 +49,7 @@ or flattened content, SignWell cannot detect them and "fields": [] will be retur
 - Flattening the PDF or converting text to outlines
 - Using custom fonts that aren't properly embedded
 - PDF generation libraries that rasterize text
+- Using ASCII85Decode or dual-filter stream encoding (use FlateDecode only)
 
 Example PDF content (what the PDF text layer should contain):
 \`\`\`
