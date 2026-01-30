@@ -2,11 +2,17 @@ import { buildPosixLaunch, buildPowerShellLaunch } from "./command.ts";
 import type { ClientSnippet, SetupRenderContext } from "./types.ts";
 
 export function buildManualSnippet(context: SetupRenderContext): ClientSnippet {
-  const posixCommand = buildPosixLaunch(context.envFilePath, context.entryPoint, context.runner);
+  const posixCommand = buildPosixLaunch(
+    context.envFilePath,
+    context.entryPoint,
+    context.runner,
+    context.isLocalDev,
+  );
   const powerShellScript = buildPowerShellLaunch(
     context.envFilePath,
     context.entryPoint,
     context.runner,
+    context.isLocalDev,
   );
   const quotedScript = JSON.stringify(powerShellScript);
   const windowsCommand = [

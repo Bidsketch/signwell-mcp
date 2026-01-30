@@ -1,11 +1,10 @@
 # SignWell MCP Server
 
-Bootstrap workspace for a Bun-based Model Context Protocol server that orchestrates SignWell's e-signature workflows. 
+Model Context Protocol server that orchestrates SignWell's e-signature workflows.
 
 ## Prerequisites
 
-- [Bun](https://bun.com) v1.2 or newer installed on your PATH for local development commands.
-- [Node.js](https://nodejs.org/) v18 or newer (required when running the published npm binary).
+- [Node.js](https://nodejs.org/) v18 or newer.
 - A SignWell API key with document access (`SIGNWELL_API_KEY` environment variable).
 - Optional overrides:
   - `SIGNWELL_API_BASE_URL` for non-production endpoints.
@@ -18,13 +17,13 @@ Bootstrap workspace for a Bun-based Model Context Protocol server that orchestra
 1. Install dependencies if you have not already:
 
    ```bash
-   bun install
+   npm install
    ```
 
 2. Bundle the CLI so MCP clients point at the build output:
 
    ```bash
-   bun run build
+   npm run build
    ```
 
 3. Run the wizard and follow the prompts:
@@ -38,7 +37,7 @@ Bootstrap workspace for a Bun-based Model Context Protocol server that orchestra
    - Prints JSON snippets for all clients plus a generic/manual flow in case you need to double-check or apply them elsewhere.
    - Use `--print` (or `-p`) to preview outputs without writing to disk, and `--yes --api-key=...` for non-interactive runs (CI, devcontainers, etc.).
    - Pass `--clients=claude-desktop,cursor` to limit which MCP clients the wizard configures; omit for "all". Use `--timeout=<ms>` only if you need a non-default HTTP timeout.
-   - After bundling (`bun run build`) and publishing the package, end users can invoke the same wizard with `npx signwell-mcp setup` or `bunx signwell-mcp setup` (both resolve the `signwell-mcp` binary declared in `package.json`). Installing globally also enables invoking `signwell-mcp setup` directly.
+   - After bundling (`npm run build`) and publishing the package, end users can invoke the same wizard with `npx signwell-mcp setup`. Installing globally also enables invoking `signwell-mcp setup` directly.
 
 ### Manual exports
 
@@ -57,8 +56,6 @@ Once the package is published to npm (GitHub: `Bidsketch/signwell-mcp`):
 
   ```bash
   npx signwell-mcp setup
-  # or
-  bunx signwell-mcp setup
   ```
 
 - Install globally if you prefer a persistent binary:
@@ -68,37 +65,37 @@ Once the package is published to npm (GitHub: `Bidsketch/signwell-mcp`):
   signwell-mcp setup
   ```
 
-After configuration, start the MCP server via `signwell-mcp` (requires Node.js v18+), or continue to use `bun run dev` during development.
+After configuration, start the MCP server via `signwell-mcp` (requires Node.js v18+).
 
 ## Local Development Workflow
 
-1. Install dependencies: `bun install`
-2. Bundle the CLI entrypoint (required for MCP client configs): `bun run build`
+1. Install dependencies: `npm install`
+2. Bundle the CLI entrypoint (required for MCP client configs): `npm run build`
 3. Configure credentials: `node build/index.js setup` (or `npx signwell-mcp setup` once published)
-4. Start the MCP server locally: `SIGNWELL_API_KEY=... bun start` (runs `node build/index.js` under the hood)
+4. Start the MCP server locally: `npm start` (runs `node build/index.js`)
 5. Open another terminal to run tests and linters before committing:
 
    ```bash
-   bun test
-   bun run typecheck
-   bun run lint
+   npm test
+   npm run typecheck
+   npm run lint
    ```
 
-6. When using MCP inspector or other clients, point them at `bun start` (stdio).
+6. When using MCP inspector or other clients, point them at `npm start` (stdio).
 
 ## Running the Server
 
 - Development entrypoint (stdio transport):
 
   ```bash
-  SIGNWELL_API_KEY="$SIGNWELL_API_KEY" bun start   # npm start -> node build/index.js
+  SIGNWELL_API_KEY="$SIGNWELL_API_KEY" npm start
   # or run directly:
   SIGNWELL_API_KEY="$SIGNWELL_API_KEY" node build/index.js
   ```
 
 - CLI helpers:
-  - `bun start -- --help` prints usage and env expectations.
-  - `bun start -- --version` prints the current build.
+  - `node build/index.js --help` prints usage and env expectations.
+  - `node build/index.js --version` prints the current build.
   - `node build/index.js setup` launches the setup wizard described above when working from source.
   - Once the package is bundled/published, `npx signwell-mcp setup` runs the wizard and `SIGNWELL_API_KEY=... npx signwell-mcp` starts the server via the packaged binary (global installs can call `signwell-mcp ...` directly).
 
@@ -137,10 +134,10 @@ Inspector call:
 Run the quality gates in order:
 
 ```bash
-bun test
-bun run typecheck
-bun run lint
-bun run format
+npm test
+npm run typecheck
+npm run lint
+npm run format
 ```
 
 ## Demo
@@ -222,19 +219,18 @@ Sample MCP inspector session (sanitized IDs):
 ## Attaching Files & Draft Safety
 
 - `document_create` and `template_create_document` always set `draft: true`, ensuring nothing is emailed until you intentionally call `document_send_draft`.
-- Supply files via the `files` array using either `file_url` (public URL or the link your MCP client provides when you `@`-attach a file in UIs like Claude Desktop), `file_base64`, or `resource_uri`. When a `resource_uri` is provided the MCP server automatically calls `resources/read` to pull the attachment bytes and forwards them to SignWell’s `/api/v1/documents/` endpoint.
+- Supply files via the `files` array using either `file_url` (public URL or the link your MCP client provides when you `@`-attach a file in UIs like Claude Desktop), `file_base64`, or `resource_uri`. When a `resource_uri` is provided the MCP server automatically calls `resources/read` to pull the attachment bytes and forwards them to SignWell's `/api/v1/documents/` endpoint.
 
 ## Available Scripts
 
 | Script | Purpose |
 | --- | --- |
-| `node build/index.js` / `bun start` | Execute the MCP server entrypoint over stdio (after `bun run build`). |
-| `bun start` | Alias for running the entrypoint via Bun. |
-| `bun test` | Run Bun's test runner. |
-| `bun run typecheck` | Type-check the project with `tsc --noEmit`. |
-| `bun run lint` | Lint source and tests using Biome. |
-| `bun run format` | Apply repository formatting conventions via Biome. |
-| `bun run build` | Produce an ESM bundle at `build/index.js` using esbuild. |
+| `npm start` | Execute the MCP server entrypoint over stdio (after `npm run build`). |
+| `npm test` | Run the test suite. |
+| `npm run typecheck` | Type-check the project with `tsc --noEmit`. |
+| `npm run lint` | Lint source and tests using Biome. |
+| `npm run format` | Apply repository formatting conventions via Biome. |
+| `npm run build` | Produce an ESM bundle at `build/index.js` using esbuild. |
 
 ## Directory Layout
 
@@ -242,11 +238,8 @@ Sample MCP inspector session (sanitized IDs):
 .
 ├── src/                # MCP server source (entrypoint + domain modules)
 │   └── setup/          # Interactive setup wizard for MCP client configuration
-├── test/               # Bun test suites
-├── scripts/            # Helper scripts for demos/automation
+├── test/               # Test suites
 ├── build/              # Bundled output (ignored in releases)
 ├── biome.json          # Biome lint/format configuration
 └── tsconfig.json       # TypeScript compiler configuration
 ```
-
-This scaffolding ensures future commits can focus on tool development rather than project plumbing.

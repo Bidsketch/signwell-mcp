@@ -98,7 +98,7 @@ describe("registerDocumentTools", () => {
     const result = await handler({
       name: "Agreement",
       recipients: [{ id: "1", email: "a@example.com" }],
-      files: [{ name: "doc", file_url: "https://example.com/1.pdf" }],
+      files: [{ name: "doc.pdf", file_url: "https://example.com/1.pdf" }],
     });
 
     expect(client.calls).toHaveLength(1);
@@ -130,7 +130,7 @@ describe("registerDocumentTools", () => {
       name: "Agreement",
       text_tags: true,
       recipients: [{ id: "1", email: "a@example.com" }],
-      files: [{ name: "doc", file_url: "https://example.com/1.pdf" }],
+      files: [{ name: "doc.pdf", file_url: "https://example.com/1.pdf" }],
     });
 
     const payload = parseResult(result);
@@ -161,7 +161,7 @@ describe("registerDocumentTools", () => {
       {
         name: "Agreement",
         recipients: [{ id: "1", email: "a@example.com" }],
-        files: [{ name: "doc", resource_uri: "resource://local-file" }],
+        files: [{ name: "doc.pdf", resource_uri: "resource://local-file" }],
       },
       extra,
     );
@@ -249,7 +249,7 @@ describe("registerDocumentTools", () => {
     await handler({
       name: "Agreement",
       recipients: [{ id: "1", email: "a@example.com" }],
-      files: [{ name: "doc", file_url: "https://example.com/1.pdf" }],
+      files: [{ name: "doc.pdf", file_url: "https://example.com/1.pdf" }],
       text_tags: true,
     });
 
@@ -301,7 +301,7 @@ describe("registerDocumentTools", () => {
       handler({
         name: "Agreement",
         recipients: [{ id: "1", email: "not-an-email" }],
-        files: [{ name: "doc", file_url: "https://example.com/1.pdf" }],
+        files: [{ name: "doc.pdf", file_url: "https://example.com/1.pdf" }],
       }),
     ).rejects.toThrow();
   });
@@ -472,7 +472,7 @@ describe("registerDocumentTools", () => {
     const result = await handler({
       name: "Agreement",
       recipients: [{ id: "1", email: "a@example.com" }],
-      files: [{ name: "doc", file_url: "https://example.com/1.pdf" }],
+      files: [{ name: "doc.pdf", file_url: "https://example.com/1.pdf" }],
     });
 
     expect(result.isError).toBe(true);

@@ -1,17 +1,75 @@
 #!/usr/bin/env node
 
 // src/index.ts
-import path8 from "node:path";
-import process8 from "node:process";
+import { realpathSync } from "node:fs";
+import path9 from "node:path";
+import process9 from "node:process";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
 // src/config/env.ts
-import process from "node:process";
+import process2 from "node:process";
 import { z } from "zod";
+
+// src/config/env-file.ts
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import process from "node:process";
+var OVERRIDE_HOME_ENV = "SIGNWELL_MCP_HOME";
+var DEFAULT_ENV_FILENAME = "env";
+function getConfigRoot(options = {}) {
+  const platform = options.platform ?? process.platform;
+  const overrideRoot = process.env[OVERRIDE_HOME_ENV];
+  if (overrideRoot) {
+    return path.resolve(overrideRoot);
+  }
+  const homeDir = options.homeDir ?? os.homedir();
+  if (platform === "win32") {
+    const appData = process.env.APPDATA ?? path.join(homeDir, "AppData", "Roaming");
+    return path.join(appData, "SignWell", "MCP");
+  }
+  if (platform === "darwin") {
+    return path.join(homeDir, "Library", "Application Support", "SignWell", "MCP");
+  }
+  return path.join(homeDir, ".config", "signwell-mcp");
+}
+function getEnvFilePath(options) {
+  const root = getConfigRoot(options);
+  return path.join(root, DEFAULT_ENV_FILENAME);
+}
+function readEnvFileSync(filePath = getEnvFilePath()) {
+  try {
+    const raw = fs.readFileSync(filePath, "utf8");
+    return parseEnvFile(raw);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return void 0;
+    }
+    throw error;
+  }
+}
+function parseEnvFile(raw) {
+  const result = {};
+  const lines = raw.split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue;
+    }
+    const [key, ...rest] = trimmed.split("=");
+    if (!key) {
+      continue;
+    }
+    result[key] = rest.join("=");
+  }
+  return result;
+}
+
+// src/config/env.ts
 function isDebugEnabled() {
-  return process.env.SIGNWELL_DEBUG === "1" || process.env.SIGNWELL_DEBUG === "true";
+  return process2.env.SIGNWELL_DEBUG === "1" || process2.env.SIGNWELL_DEBUG === "true";
 }
 var EnvError = class extends Error {
   constructor(message) {
@@ -22,6 +80,11 @@ var EnvError = class extends Error {
 var DEFAULT_BASE_URL = "https://www.signwell.com/api/v1";
 var DEFAULT_TIMEOUT_MS = 9e4;
 var MAX_TIMEOUT_MS = 18e4;
+var REQUIRED_KEYS = [
+  "SIGNWELL_API_KEY",
+  "SIGNWELL_API_BASE_URL",
+  "SIGNWELL_API_TIMEOUT_MS"
+];
 var ConfigSchema = z.object({
   apiKey: z.string().min(1, { message: "SIGNWELL_API_KEY is required." }),
   baseUrl: z.string().url({ message: "SIGNWELL_API_BASE_URL must be a valid URL." }),
@@ -32,12 +95,12 @@ var ConfigSchema = z.object({
   })
 });
 function loadEnv(options = {}) {
-  const bunRuntime = globalThis;
-  const quiet = options.quiet ?? detectTestMode(bunRuntime);
+  const quiet = options.quiet ?? detectTestMode();
+  hydrateEnvFromDefaultFile();
   const envInput = {
-    apiKey: clean(process.env.SIGNWELL_API_KEY),
-    baseUrl: clean(process.env.SIGNWELL_API_BASE_URL) ?? DEFAULT_BASE_URL,
-    timeoutMs: parseTimeout(clean(process.env.SIGNWELL_API_TIMEOUT_MS)) ?? DEFAULT_TIMEOUT_MS
+    apiKey: clean(process2.env.SIGNWELL_API_KEY),
+    baseUrl: clean(process2.env.SIGNWELL_API_BASE_URL) ?? DEFAULT_BASE_URL,
+    timeoutMs: parseTimeout(clean(process2.env.SIGNWELL_API_TIMEOUT_MS)) ?? DEFAULT_TIMEOUT_MS
   };
   const result = ConfigSchema.safeParse(envInput);
   if (!result.success) {
@@ -73,14 +136,27 @@ function parseTimeout(value) {
 function buildDefaultUserAgent(version) {
   return `signwell-mcp/${version ?? "dev"}`;
 }
-function detectTestMode(runtime) {
-  if (typeof runtime.Bun?.isTest === "boolean") {
-    return runtime.Bun.isTest;
+function detectTestMode() {
+  return process2.env.NODE_ENV === "test";
+}
+function hydrateEnvFromDefaultFile() {
+  const missingKeys = REQUIRED_KEYS.filter((key) => isUnset(process2.env[key]));
+  if (missingKeys.length === 0) {
+    return;
   }
-  if (process.env.BUN_TESTING === "1" || process.env.BUN_TEST === "1") {
-    return true;
+  const fileValues = readEnvFileSync();
+  if (!fileValues) {
+    return;
   }
-  return process.env.NODE_ENV === "test";
+  for (const key of missingKeys) {
+    const value = fileValues[key];
+    if (typeof value === "string" && value.length > 0 && isUnset(process2.env[key])) {
+      process2.env[key] = value;
+    }
+  }
+}
+function isUnset(value) {
+  return typeof value !== "string" || value.trim().length === 0;
 }
 
 // src/resources/text-tags.ts
@@ -100,15 +176,32 @@ or flattened content, SignWell cannot detect them and "fields": [] will be retur
 
 1. **Use text drawing methods** - e.g., \`canvas.drawString()\` in ReportLab, not image embedding
 2. **Use standard fonts** - Stick to built-in PDF fonts (Helvetica, Times, Courier) or properly embedded fonts
-3. **Verify text is selectable** - Open the PDF and try to select/copy the text tag with your mouse
-4. **Do NOT flatten or rasterize** - Avoid converting text to outlines or images
+3. **Use FlateDecode only** - Do NOT use ASCII85Decode or other exotic stream filters. Use only FlateDecode compression. SignWell may not parse PDFs with dual-filter encoding (e.g. ASCII85Decode + FlateDecode).
+4. **MANDATORY: Render text tags in WHITE (invisible) text** - You MUST set the text color to white before drawing any text tag. Tags rendered in black or any visible color will appear as ugly raw text to signers. Use white: \`setFillColorRGB(1, 1, 1)\` in ReportLab, \`doc.fillColor('white')\` in PDFKit, \`doc.setTextColor(255, 255, 255)\` in jsPDF. Always reset to black after drawing the tag. SignWell will still detect and parse white text \u2014 it reads the PDF text layer regardless of color.
+5. **Do NOT flatten or rasterize** - Avoid converting text to outlines or images
 
-### How to verify your PDF has valid text tags:
-1. Open the PDF in any PDF viewer
-2. Try to SELECT the text "{{signature:1:y}}" with your mouse
-3. Try to COPY the selected text
-4. If you can select and copy it as text, SignWell can parse it
-5. If you cannot select it (it's an image or graphic), SignWell will NOT detect it
+### ReportLab-specific instructions:
+
+**REMINDER: ALL text tags MUST use white text color. Never draw tags in black.**
+
+\`\`\`python
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+
+c = canvas.Canvas("output.pdf", pagesize=letter)
+# IMPORTANT: Set compression to FlateDecode only (no ASCII85)
+c._doc.encoding = "FlateDecode"
+# Draw visible content normally
+c.setFont("Helvetica", 12)
+c.setFillColorRGB(0, 0, 0)  # Black text for visible content
+c.drawString(72, 700, "Parent/Guardian Signature:")
+# Draw text tags in WHITE so they are invisible but parseable
+c.setFillColorRGB(1, 1, 1)  # White text for tags
+c.setFont("Helvetica", 10)
+c.drawString(230, 700, "{{signature:1:y}}")
+c.setFillColorRGB(0, 0, 0)  # Reset to black
+c.save()
+\`\`\`
 
 ### Common mistakes that break text tags:
 - Rendering text as an image/screenshot
@@ -116,6 +209,7 @@ or flattened content, SignWell cannot detect them and "fields": [] will be retur
 - Flattening the PDF or converting text to outlines
 - Using custom fonts that aren't properly embedded
 - PDF generation libraries that rasterize text
+- Using ASCII85Decode or dual-filter stream encoding (use FlateDecode only)
 
 Example PDF content (what the PDF text layer should contain):
 \`\`\`
@@ -306,22 +400,22 @@ function registerTextTagsResource(server) {
 
 // src/setup/index.ts
 import { spawn } from "node:child_process";
-import fs5 from "node:fs";
-import path6 from "node:path";
-import process6 from "node:process";
+import fs6 from "node:fs";
+import path7 from "node:path";
+import process7 from "node:process";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 
 // src/setup/claude-code.ts
-import fs from "node:fs";
+import fs2 from "node:fs";
 import fsp from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
+import os2 from "node:os";
+import path2 from "node:path";
 function getClaudeCodeConfigPath(options = {}) {
-  const home = options.homeDir ?? os.homedir();
-  return path.join(home, ".claude", "mcp.json");
+  const home = options.homeDir ?? os2.homedir();
+  return path2.join(home, ".claude", "mcp.json");
 }
 function buildClaudeCodeSnippet(context) {
   const snippet = buildServerEntrySnippet(context);
@@ -349,10 +443,10 @@ async function applyClaudeCodeConfig(context, options = {}) {
     };
   }
   const config = await readMcpConfig(configPath);
-  const dir = path.dirname(configPath);
+  const dir = path2.dirname(configPath);
   await fsp.mkdir(dir, { recursive: true, mode: 448 });
   let backupPath;
-  if (fs.existsSync(configPath)) {
+  if (fs2.existsSync(configPath)) {
     backupPath = `${configPath}.backup-${timestamp()}`;
     await fsp.copyFile(configPath, backupPath);
   }
@@ -412,16 +506,16 @@ function timestamp() {
 }
 
 // src/setup/claude-desktop.ts
-import fs2 from "node:fs";
+import fs3 from "node:fs";
 import fsp2 from "node:fs/promises";
-import os2 from "node:os";
-import path2 from "node:path";
-import process2 from "node:process";
+import os3 from "node:os";
+import path3 from "node:path";
+import process3 from "node:process";
 function getClaudeDesktopConfigPath(options = {}) {
-  const platform = options.platform ?? process2.platform;
-  const home = options.homeDir ?? os2.homedir();
+  const platform = options.platform ?? process3.platform;
+  const home = options.homeDir ?? os3.homedir();
   if (platform === "darwin") {
-    return path2.join(
+    return path3.join(
       home,
       "Library",
       "Application Support",
@@ -430,10 +524,10 @@ function getClaudeDesktopConfigPath(options = {}) {
     );
   }
   if (platform === "win32") {
-    const appData = process2.env.APPDATA ?? path2.join(home, "AppData", "Roaming");
-    return path2.join(appData, "Claude", "claude_desktop_config.json");
+    const appData = process3.env.APPDATA ?? path3.join(home, "AppData", "Roaming");
+    return path3.join(appData, "Claude", "claude_desktop_config.json");
   }
-  return path2.join(home, ".config", "Claude", "claude_desktop_config.json");
+  return path3.join(home, ".config", "Claude", "claude_desktop_config.json");
 }
 function buildClaudeDesktopSnippet(context) {
   const configPath = getClaudeDesktopConfigPath();
@@ -465,9 +559,9 @@ async function applyClaudeDesktopConfig(context, options = {}) {
   const servers = typeof config.mcpServers === "object" && config.mcpServers !== null ? config.mcpServers : {};
   servers[context.serverName] = snippetObject;
   config.mcpServers = servers;
-  await fsp2.mkdir(path2.dirname(configPath), { recursive: true });
+  await fsp2.mkdir(path3.dirname(configPath), { recursive: true });
   let backupPath;
-  if (fs2.existsSync(configPath)) {
+  if (fs3.existsSync(configPath)) {
     backupPath = `${configPath}.backup`;
     await fsp2.copyFile(configPath, backupPath);
   }
@@ -486,11 +580,13 @@ function buildDesktopEntry(context) {
   const entry = {
     command: context.launchCommand.command,
     args: context.launchCommand.args,
-    cwd: context.repositoryPath,
     metadata: {
       description: "SignWell MCP server"
     }
   };
+  if (context.isLocalDev) {
+    entry.cwd = context.repositoryPath;
+  }
   if (context.environment && Object.keys(context.environment).length > 0) {
     entry.env = context.environment;
   }
@@ -513,13 +609,13 @@ async function readJsonConfig(configPath) {
 }
 
 // src/setup/cursor.ts
-import fs3 from "node:fs";
+import fs4 from "node:fs";
 import fsp3 from "node:fs/promises";
-import os3 from "node:os";
-import path3 from "node:path";
+import os4 from "node:os";
+import path4 from "node:path";
 function getCursorConfigPath(options = {}) {
-  const home = options.homeDir ?? os3.homedir();
-  return path3.join(home, ".cursor", "mcp.json");
+  const home = options.homeDir ?? os4.homedir();
+  return path4.join(home, ".cursor", "mcp.json");
 }
 function buildCursorSnippet(context) {
   const snippetObject = buildCursorConfig(context);
@@ -547,10 +643,10 @@ async function applyCursorConfig(context, options = {}) {
     };
   }
   const config = await readCursorConfig(configPath);
-  const dir = path3.dirname(configPath);
+  const dir = path4.dirname(configPath);
   await fsp3.mkdir(dir, { recursive: true, mode: 448 });
   let backupPath;
-  if (fs3.existsSync(configPath)) {
+  if (fs4.existsSync(configPath)) {
     backupPath = `${configPath}.backup-${timestamp2()}`;
     await fsp3.copyFile(configPath, backupPath);
   }
@@ -598,19 +694,19 @@ function timestamp2() {
 }
 
 // src/setup/opencode.ts
-import fs4 from "node:fs";
+import fs5 from "node:fs";
 import fsp4 from "node:fs/promises";
-import os4 from "node:os";
-import path4 from "node:path";
-import process3 from "node:process";
+import os5 from "node:os";
+import path5 from "node:path";
+import process4 from "node:process";
 function getOpenCodeConfigPath(options = {}) {
-  const platform = options.platform ?? process3.platform;
-  const home = options.homeDir ?? os4.homedir();
+  const platform = options.platform ?? process4.platform;
+  const home = options.homeDir ?? os5.homedir();
   if (platform === "win32") {
-    const appData = process3.env.APPDATA ?? path4.join(home, "AppData", "Roaming");
-    return path4.join(appData, "opencode", "config.json");
+    const appData = process4.env.APPDATA ?? path5.join(home, "AppData", "Roaming");
+    return path5.join(appData, "opencode", "config.json");
   }
-  return path4.join(home, ".config", "opencode", "config.json");
+  return path5.join(home, ".config", "opencode", "config.json");
 }
 function buildOpenCodeSnippet(context) {
   const snippetObject = buildOpenCodeEntry(context);
@@ -644,11 +740,11 @@ async function applyOpenCodeConfig(context, options = {}) {
       snippet
     };
   }
-  const dir = path4.dirname(configPath);
+  const dir = path5.dirname(configPath);
   await fsp4.mkdir(dir, { recursive: true, mode: 448 });
   const config = await readOpenCodeConfig(configPath);
   let backupPath;
-  if (fs4.existsSync(configPath)) {
+  if (fs5.existsSync(configPath)) {
     backupPath = `${configPath}.backup-${timestamp3()}`;
     await fsp4.copyFile(configPath, backupPath);
   }
@@ -762,7 +858,7 @@ function resolveClientConfigs(keys) {
 }
 
 // src/setup/command.ts
-import process4 from "node:process";
+import process5 from "node:process";
 function shellQuote(value) {
   const escaped = value.replace(/'/g, () => `'\\''`);
   return `'${escaped}'`;
@@ -771,14 +867,18 @@ function psQuote(value) {
   const escaped = value.replace(/'/g, "''");
   return `'${escaped}'`;
 }
-function buildPosixLaunch(envFilePath, entryPoint, runner) {
-  const envFile = shellQuote(envFilePath);
-  const entry = shellQuote(entryPoint);
-  return `set -a && . ${envFile} && set +a && node ${entry}`;
+function resolveNodeBin() {
+  return process5.execPath;
 }
-function buildPowerShellLaunch(envFilePath, entryPoint, runner) {
+function buildPosixLaunch(envFilePath, entryPoint, runner, isLocalDev) {
+  const envFile = shellQuote(envFilePath);
+  const nodeBin = shellQuote(resolveNodeBin());
+  const runCmd = isLocalDev ? `${nodeBin} ${shellQuote(entryPoint)}` : `${nodeBin} ${shellQuote(resolveNpxBin())} -y signwell-mcp`;
+  return `set -a && . ${envFile} && set +a && ${runCmd}`;
+}
+function buildPowerShellLaunch(envFilePath, entryPoint, runner, isLocalDev) {
   const envFile = psQuote(envFilePath);
-  const entry = psQuote(entryPoint);
+  const nodeBin = psQuote(resolveNodeBin());
   const scriptParts = [
     `$envFile = ${envFile}`,
     "if (Test-Path -LiteralPath $envFile) {",
@@ -794,11 +894,16 @@ function buildPowerShellLaunch(envFilePath, entryPoint, runner) {
     "  }",
     "}"
   ];
-  scriptParts.push(`node ${entry}`);
+  const runCmd = isLocalDev ? `${nodeBin} ${psQuote(entryPoint)}` : `${nodeBin} ${psQuote(resolveNpxBin())} -y signwell-mcp`;
+  scriptParts.push(runCmd);
   return scriptParts.join("; ");
 }
-function buildLaunchCommand(envFilePath, entryPoint, runner) {
-  if (process4.platform === "win32") {
+function resolveNpxBin() {
+  const nodeDir = process5.execPath.replace(/[/\\]node([.][a-z]+)?$/i, "");
+  return `${nodeDir}/npx`;
+}
+function buildLaunchCommand(envFilePath, entryPoint, runner, isLocalDev) {
+  if (process5.platform === "win32") {
     return {
       command: "powershell.exe",
       args: [
@@ -806,43 +911,21 @@ function buildLaunchCommand(envFilePath, entryPoint, runner) {
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
-        buildPowerShellLaunch(envFilePath, entryPoint, runner)
+        buildPowerShellLaunch(envFilePath, entryPoint, runner, isLocalDev)
       ]
     };
   }
   return {
     command: "/bin/sh",
-    args: ["-c", buildPosixLaunch(envFilePath, entryPoint, runner)]
+    args: ["-c", buildPosixLaunch(envFilePath, entryPoint, runner, isLocalDev)]
   };
 }
 
 // src/setup/env.ts
 import fsp5 from "node:fs/promises";
-import os5 from "node:os";
-import path5 from "node:path";
-import process5 from "node:process";
-var OVERRIDE_HOME_ENV = "SIGNWELL_MCP_HOME";
-var DEFAULT_ENV_FILENAME = "env";
-function getConfigRoot(options = {}) {
-  const platform = options.platform ?? process5.platform;
-  const custom = process5.env[OVERRIDE_HOME_ENV];
-  if (custom) {
-    return path5.resolve(custom);
-  }
-  const homeDir = options.homeDir ?? os5.homedir();
-  if (platform === "win32") {
-    const appData = process5.env.APPDATA ?? path5.join(homeDir, "AppData", "Roaming");
-    return path5.join(appData, "SignWell", "MCP");
-  }
-  if (platform === "darwin") {
-    return path5.join(homeDir, "Library", "Application Support", "SignWell", "MCP");
-  }
-  return path5.join(homeDir, ".config", "signwell-mcp");
-}
-function getEnvFilePath(options) {
-  const root = getConfigRoot(options);
-  return path5.join(root, DEFAULT_ENV_FILENAME);
-}
+import os6 from "node:os";
+import path6 from "node:path";
+import process6 from "node:process";
 async function readExistingEnv(filePath = getEnvFilePath()) {
   try {
     const raw = await fsp5.readFile(filePath, "utf8");
@@ -860,7 +943,7 @@ async function writeEnvFile(values, options = {}) {
   if (options.printOnly) {
     return { path: filePath, contents, wroteFile: false };
   }
-  const dir = path5.dirname(filePath);
+  const dir = path6.dirname(filePath);
   await fsp5.mkdir(dir, { recursive: true, mode: 448 });
   await fsp5.writeFile(filePath, contents, { mode: 384 });
   try {
@@ -877,37 +960,28 @@ function formatEnv(values) {
   if (values.timeoutMs && values.timeoutMs !== DEFAULT_TIMEOUT_MS) {
     lines.push(`SIGNWELL_API_TIMEOUT_MS=${values.timeoutMs}`);
   }
-  return `${lines.join(os5.EOL)}${os5.EOL}`;
+  return `${lines.join(os6.EOL)}${os6.EOL}`;
 }
 function parseEnvContent(raw) {
+  const pairs = parseEnvFile(raw);
   const result = {};
-  const lines = raw.split(/\r?\n/);
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) {
-      continue;
-    }
-    const [key, ...rest] = trimmed.split("=");
-    const value = rest.join("=");
-    switch (key) {
-      case "SIGNWELL_API_KEY":
-        result.apiKey = value;
-        break;
-      case "SIGNWELL_API_BASE_URL":
-        result.baseUrl = value;
-        break;
-      case "SIGNWELL_API_TIMEOUT_MS":
-        result.timeoutMs = Number(value);
-        break;
-      default:
-        break;
+  if (pairs.SIGNWELL_API_KEY) {
+    result.apiKey = pairs.SIGNWELL_API_KEY;
+  }
+  if (pairs.SIGNWELL_API_BASE_URL) {
+    result.baseUrl = pairs.SIGNWELL_API_BASE_URL;
+  }
+  if (pairs.SIGNWELL_API_TIMEOUT_MS) {
+    const parsed = Number(pairs.SIGNWELL_API_TIMEOUT_MS);
+    if (!Number.isNaN(parsed)) {
+      result.timeoutMs = parsed;
     }
   }
   return result;
 }
 function summarizeEnvInstructions(envPath) {
   const commands = [];
-  if (process5.platform === "win32") {
+  if (process6.platform === "win32") {
     commands.push(
       `PowerShell: Get-Content -Path "${envPath}" | ForEach-Object { $parts = $_.Split('='); if ($parts.Length -eq 2) { $env:$parts[0] = $parts[1] } }`
     );
@@ -919,11 +993,17 @@ function summarizeEnvInstructions(envPath) {
 
 // src/setup/manual.ts
 function buildManualSnippet(context) {
-  const posixCommand = buildPosixLaunch(context.envFilePath, context.entryPoint, context.runner);
+  const posixCommand = buildPosixLaunch(
+    context.envFilePath,
+    context.entryPoint,
+    context.runner,
+    context.isLocalDev
+  );
   const powerShellScript = buildPowerShellLaunch(
     context.envFilePath,
     context.entryPoint,
-    context.runner
+    context.runner,
+    context.isLocalDev
   );
   const quotedScript = JSON.stringify(powerShellScript);
   const windowsCommand = [
@@ -1026,11 +1106,12 @@ async function runSetup(args, options = {}) {
     });
   }
   const entryResolution = resolveEntryPoint();
-  const repositoryPath = entryResolution?.repositoryPath ?? process6.cwd();
+  const repositoryPath = entryResolution?.repositoryPath ?? process7.cwd();
   const runner = entryResolution?.runner ?? "node";
-  const entryPoint = entryResolution?.entryPoint ?? path6.resolve(repositoryPath, "build/index.js");
+  const entryPoint = entryResolution?.entryPoint ?? path7.resolve(repositoryPath, "build/index.js");
+  const isLocalDev = entryResolution?.isLocalDev ?? false;
   const launchEnvironment = resolveLaunchEnvironment(flags);
-  if (!fs5.existsSync(entryPoint)) {
+  if (!fs6.existsSync(entryPoint)) {
     console.warn(
       `[SignWell MCP] Build output not found at ${entryPoint}. Run "npm run build" before configuring MCP clients.`
     );
@@ -1041,7 +1122,8 @@ async function runSetup(args, options = {}) {
     repositoryPath,
     entryPoint,
     runner,
-    launchCommand: buildLaunchCommand(envResult.path, entryPoint, runner),
+    isLocalDev,
+    launchCommand: buildLaunchCommand(envResult.path, entryPoint, runner, isLocalDev),
     environment: launchEnvironment
   };
   const managedSections = [];
@@ -1212,7 +1294,7 @@ function printLogo() {
 }
 function resolveLaunchEnvironment(flags) {
   const env = {};
-  const debugValue = flags.debug === true ? "1" : typeof process6.env.SIGNWELL_DEBUG === "string" && process6.env.SIGNWELL_DEBUG.length > 0 ? process6.env.SIGNWELL_DEBUG : void 0;
+  const debugValue = flags.debug === true ? "1" : typeof process7.env.SIGNWELL_DEBUG === "string" && process7.env.SIGNWELL_DEBUG.length > 0 ? process7.env.SIGNWELL_DEBUG : void 0;
   if (debugValue) {
     env.SIGNWELL_DEBUG = debugValue;
   }
@@ -1242,7 +1324,7 @@ async function maybeOfferApiKeyPage(interactive) {
   }
 }
 function openBrowser(url) {
-  const platform = process6.platform;
+  const platform = process7.platform;
   let command;
   let args;
   if (platform === "darwin") {
@@ -1279,33 +1361,35 @@ function resolveEntryPoint() {
   return resolveRuntimeEntryPoint();
 }
 function resolveLocalSourceEntry() {
-  const cwd = process6.cwd();
-  const entryPath = path6.resolve(cwd, "src", "index.ts");
-  if (!fs5.existsSync(entryPath)) {
+  const cwd = process7.cwd();
+  const entryPath = path7.resolve(cwd, "src", "index.ts");
+  if (!fs6.existsSync(entryPath)) {
     return void 0;
   }
   return {
-    entryPoint: path6.resolve(path6.dirname(entryPath), "..", "build", "index.js"),
+    entryPoint: path7.resolve(path7.dirname(entryPath), "..", "build", "index.js"),
     repositoryPath: inferRepositoryPath(entryPath),
-    runner: "node"
+    runner: "node",
+    isLocalDev: true
   };
 }
 function resolveLocalBuildEntry() {
-  const cwd = process6.cwd();
-  const entryPath = path6.resolve(cwd, "build", "index.js");
-  if (!fs5.existsSync(entryPath)) {
+  const cwd = process7.cwd();
+  const entryPath = path7.resolve(cwd, "build", "index.js");
+  if (!fs6.existsSync(entryPath)) {
     return void 0;
   }
   return {
     entryPoint: entryPath,
     repositoryPath: inferRepositoryPath(entryPath),
-    runner: "node"
+    runner: "node",
+    isLocalDev: true
   };
 }
 function resolveRuntimeEntryPoint() {
   const candidates = [];
-  if (process6.argv[1]) {
-    candidates.push(process6.argv[1]);
+  if (process7.argv[1]) {
+    candidates.push(process7.argv[1]);
   }
   try {
     candidates.push(fileURLToPath(import.meta.url));
@@ -1316,14 +1400,15 @@ function resolveRuntimeEntryPoint() {
       continue;
     }
     try {
-      const resolved = fs5.realpathSync(candidate);
-      if (!fs5.existsSync(resolved)) {
+      const resolved = fs6.realpathSync(candidate);
+      if (!fs6.existsSync(resolved)) {
         continue;
       }
       return {
         entryPoint: resolved,
         repositoryPath: inferRepositoryPath(resolved),
-        runner: "node"
+        runner: "node",
+        isLocalDev: false
       };
     } catch {
     }
@@ -1331,21 +1416,21 @@ function resolveRuntimeEntryPoint() {
   return void 0;
 }
 function inferRepositoryPath(entryPointPath) {
-  let current = path6.dirname(entryPointPath);
+  let current = path7.dirname(entryPointPath);
   const visited = /* @__PURE__ */ new Set();
   while (!visited.has(current)) {
-    const packageJsonPath = path6.join(current, "package.json");
-    if (fs5.existsSync(packageJsonPath)) {
+    const packageJsonPath = path7.join(current, "package.json");
+    if (fs6.existsSync(packageJsonPath)) {
       return current;
     }
     visited.add(current);
-    const parent = path6.dirname(current);
+    const parent = path7.dirname(current);
     if (parent === current) {
       break;
     }
     current = parent;
   }
-  return path6.dirname(entryPointPath);
+  return path7.dirname(entryPointPath);
 }
 function maskSecret(value) {
   if (value.length <= 4) {
@@ -1481,17 +1566,17 @@ var SignWellClient = class {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS2;
     this.fetchImpl = options.fetchImplementation ?? fetch;
   }
-  async get(path9, options = {}) {
-    return this.request({ ...options, path: path9, method: "GET" });
+  async get(path10, options = {}) {
+    return this.request({ ...options, path: path10, method: "GET" });
   }
-  async post(path9, body, options = {}) {
-    return this.request({ ...options, path: path9, method: "POST", body });
+  async post(path10, body, options = {}) {
+    return this.request({ ...options, path: path10, method: "POST", body });
   }
-  async put(path9, body, options = {}) {
-    return this.request({ ...options, path: path9, method: "PUT", body });
+  async put(path10, body, options = {}) {
+    return this.request({ ...options, path: path10, method: "PUT", body });
   }
-  async delete(path9, options = {}) {
-    return this.request({ ...options, path: path9, method: "DELETE" });
+  async delete(path10, options = {}) {
+    return this.request({ ...options, path: path10, method: "DELETE" });
   }
   async request(options) {
     const response = await this.performRequest(options);
@@ -1501,8 +1586,8 @@ var SignWellClient = class {
     const response = await this.performRequest(options);
     return response.arrayBuffer();
   }
-  buildUrl(path9, query) {
-    const cleanPath = path9.replace(/^\//, "");
+  buildUrl(path10, query) {
+    const cleanPath = path10.replace(/^\//, "");
     const url = new URL(cleanPath, this.baseUrl);
     if (query) {
       Object.entries(query).forEach(([key, value]) => {
@@ -1649,10 +1734,10 @@ import { ReadResourceResultSchema as ReadResourceResultSchema2 } from "@modelcon
 // src/tools/files.ts
 import { exec } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import fs6 from "node:fs/promises";
-import os6 from "node:os";
-import path7 from "node:path";
-import process7 from "node:process";
+import fs7 from "node:fs/promises";
+import os7 from "node:os";
+import path8 from "node:path";
+import process8 from "node:process";
 import { promisify } from "node:util";
 import { ReadResourceResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z as z2 } from "zod";
@@ -1671,7 +1756,18 @@ function registerFileTools(server) {
   server.registerTool(
     "file_store",
     {
-      description: "Store a file for upcoming SignWell requests. Provide either a resource_uri (for @ attachments), a file_url, or a local file_path. When no value is provided, a native file picker opens (desktop only). Returns a file_token you can pass to document/template tools.",
+      description: `Store a user's existing file for upcoming SignWell requests. Returns a file_token you can pass to document/template tools.
+
+IMPORTANT: This tool is for the USER'S EXISTING FILES only. Do NOT read, parse, or convert the file \u2014 upload it as-is.
+
+HOW TO PROVIDE THE FILE (in order of preference):
+1. No arguments \u2014 Opens a native OS file picker dialog. USE THIS BY DEFAULT. Simply call file_store with no arguments and the user will select the file themselves.
+2. file_path \u2014 Only if the user explicitly provides a local path on their computer (e.g. ~/Documents/contract.docx).
+3. file_url \u2014 A publicly accessible URL to the file.
+
+CHAT ATTACHMENTS: When a user uploads/attaches a file in the chat, DO NOT use resource_uri \u2014 those are sandboxed and inaccessible. Instead, call file_store with NO arguments to open the native file picker.
+
+CLAUDE-GENERATED FILES: If YOU created the file content (e.g. generated a PDF), do NOT use file_store. Pass file_base64 directly to document_create instead.`,
       inputSchema: selectFileSchema
     },
     async (input2, extra) => handleFileStore(input2, extra)
@@ -1763,7 +1859,7 @@ function enforceSizeLimit(size) {
 function guessNameFromUri(uri) {
   try {
     const parsed = new URL(uri);
-    const base = path7.basename(parsed.pathname);
+    const base = path8.basename(parsed.pathname);
     return base || null;
   } catch {
     const trimmed = uri.split("/").pop();
@@ -1771,11 +1867,11 @@ function guessNameFromUri(uri) {
   }
 }
 async function openNativeFilePicker() {
-  const testPath = process7.env[TEST_FILE_PICKER_PATH_ENV];
+  const testPath = process8.env[TEST_FILE_PICKER_PATH_ENV];
   if (testPath && testPath.length > 0) {
     return testPath;
   }
-  const platform = os6.platform();
+  const platform = os7.platform();
   if (platform === "darwin") {
     const script = [
       'set theFile to choose file with prompt "Select a document to send for signature" of type {"pdf", "doc", "docx", "png", "jpg", "jpeg"}',
@@ -1826,15 +1922,28 @@ function cleanupExpiredFiles() {
     }
   }
 }
+var SANDBOX_PATH_PATTERNS = ["/home/claude", "/mnt/user-data", "/tmp/claude"];
+function isSandboxPath(filePath) {
+  return SANDBOX_PATH_PATTERNS.some((p) => filePath.startsWith(p));
+}
 async function readLocalFile(filePath, nameOverride) {
-  const stats = await fs6.stat(filePath);
-  enforceSizeLimit(stats.size);
-  const buffer = await fs6.readFile(filePath);
-  return {
-    name: nameOverride ?? path7.basename(filePath),
-    file_base64: buffer.toString("base64"),
-    size_bytes: buffer.byteLength
-  };
+  try {
+    const stats = await fs7.stat(filePath);
+    enforceSizeLimit(stats.size);
+    const buffer = await fs7.readFile(filePath);
+    return {
+      name: nameOverride ?? path8.basename(filePath),
+      file_base64: buffer.toString("base64"),
+      size_bytes: buffer.byteLength
+    };
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT" && isSandboxPath(filePath)) {
+      throw new Error(
+        `The path "${filePath}" is inside the Claude sandbox and is not accessible to the MCP server. If you generated this file, pass its content as file_base64 directly to document_create instead of using file_store. If this is a user's existing file, call file_store with no arguments to open the native file picker.`
+      );
+    }
+    throw error;
+  }
 }
 async function pickFileUsingNativeDialog(nameOverride) {
   const filePath = await openNativeFilePicker();
@@ -1898,6 +2007,44 @@ var completedPdfSchema = z3.object({
   include_audit_page: z3.boolean().default(true),
   file_format: z3.enum(["pdf", "zip"]).default("pdf")
 });
+var ALLOWED_FILE_EXTENSIONS = /* @__PURE__ */ new Set([
+  ".pdf",
+  ".doc",
+  ".docx",
+  ".pages",
+  ".ppt",
+  ".pptx",
+  ".key",
+  ".xls",
+  ".xlsx",
+  ".numbers",
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".tiff",
+  ".tif",
+  ".webp"
+]);
+function extractExtension(filename) {
+  const dot = filename.lastIndexOf(".");
+  return dot >= 0 ? filename.slice(dot).toLowerCase() : "";
+}
+function validateFileExtension(name, fileUrl) {
+  const ext = extractExtension(name);
+  if (!ext) {
+    return `File "${name}" is missing a file extension. Supported types: ${[...ALLOWED_FILE_EXTENSIONS].join(", ")}`;
+  }
+  if (!ALLOWED_FILE_EXTENSIONS.has(ext)) {
+    return `File "${name}" has unsupported extension "${ext}". Supported types: ${[...ALLOWED_FILE_EXTENSIONS].join(", ")}`;
+  }
+  if (fileUrl) {
+    const urlExt = extractExtension(new URL(fileUrl).pathname);
+    if (urlExt && !ALLOWED_FILE_EXTENSIONS.has(urlExt)) {
+      return `File URL for "${name}" points to unsupported type "${urlExt}". Supported types: ${[...ALLOWED_FILE_EXTENSIONS].join(", ")}`;
+    }
+  }
+  return void 0;
+}
 var COMPLETED_PDF_WARNING_THRESHOLD_BYTES = 5 * 1024 * 1024;
 function deriveEditorUrl(data) {
   const embedded = data.embedded_edit_url;
@@ -1947,44 +2094,47 @@ function registerDocumentTools(server, client) {
   };
   register(
     "document_create",
-    `Create a SignWell document (draft by default).
+    `Create a SignWell document (always created as a draft).
 
-RECOMMENDED WORKFLOW:
-1. file_store (provide file_path, file_url, or resource_uri) \u2192 returns file_token
-2. file_validate_text_tags (pass file_token) \u2192 validates tags are extractable
-3. document_create (pass file_token in files array) \u2192 creates the document
+CRITICAL RULES:
+- Do NOT read, parse, extract, or verify file contents before uploading. The user already knows what is in the file.
+- Do NOT convert files between formats (e.g. do NOT convert .docx to .pdf). SignWell handles conversion automatically.
+- The user will place signature fields in the SignWell editor. Just upload the file and return the editor link.
 
-REQUIRED - You MUST provide these parameters:
+SUPPORTED FILE TYPES: .pdf, .doc, .docx, .pages, .ppt, .pptx, .key, .xls, .xlsx, .numbers, .jpg, .jpeg, .png, .tiff, .tif, .webp
+
+WORKFLOW FOR USER'S EXISTING FILES:
+1. file_store (call with NO arguments to open native file picker) \u2192 returns file_token
+2. document_create (pass file_token in files array) \u2192 creates draft, returns editor_url
+
+WORKFLOW FOR CLAUDE-GENERATED FILES:
+1. document_create with file_base64 directly (skip file_store) \u2192 creates draft, returns editor_url
+   Do NOT write the file to disk and pass a file_path \u2014 sandbox paths are inaccessible. Use file_base64.
+
+FILE ACCESS: Chat attachments and sandbox paths (/home/claude, /mnt/user-data) are inaccessible to the MCP server. Do NOT use resource_uri or sandbox file_path values. For existing files, call file_store with no arguments to open the native file picker.
+
+REQUIRED PARAMETERS:
 1. name: Document name
 2. recipients: Array with at least one object containing "id" and "email"
 3. files: Array with at least one object containing "name" and one of: "file_token" (recommended), "file_url", "file_base64", or "resource_uri"
 
-EXAMPLE (using file_token):
+EXAMPLE (docx via file_token \u2014 most common):
+{
+  "name": "NDA Agreement",
+  "recipients": [{"id": "1", "email": "signer@example.com"}],
+  "files": [{"name": "nda.docx", "file_token": "<token from file_store>"}]
+}
+
+EXAMPLE (pdf with text tags):
 {
   "name": "Contract",
   "text_tags": true,
   "recipients": [{"id": "1", "email": "signer@example.com"}],
-  "files": [{"name": "doc.pdf", "file_token": "<token from file_store>"}]
+  "files": [{"name": "contract.pdf", "file_token": "<token from file_store>"}]
 }
 
-EXAMPLE (inline base64):
-{
-  "name": "Contract",
-  "text_tags": true,
-  "recipients": [{"id": "1", "email": "signer@example.com"}],
-  "files": [{"name": "doc.pdf", "file_base64": "<base64-pdf>"}]
-}
-
-TEXT TAGS: Set text_tags: true if PDF contains signature placeholders like:
-- {{signature:1:y}} - Signature for recipient id "1"
-- {{date:1:y}} - Date field
-- {{text:1:y:Label}} - Text field
-
-The recipient "id" MUST match the number in text tags (id:"1" matches {{signature:1:y}}).
-
-CRITICAL: Text tags must be SELECTABLE/SEARCHABLE text in the PDF, not images or graphics.
-When generating PDFs, use text drawing methods with standard fonts. To verify: open the PDF
-and try to select/copy the tag text. If you can't select it, SignWell can't parse it.`,
+TEXT TAGS (optional): Set text_tags: true only if the document already contains signature placeholders like {{signature:1:y}}.
+The recipient "id" MUST match the number in text tags (id:"1" matches {{signature:1:y}}).`,
     createDocumentSchema,
     (input2, extra) => handleCreateDocument(client, input2, extra)
   );
@@ -2028,6 +2178,10 @@ async function handleCreateDocument(client, input2, extra) {
         type: "validation",
         message: `File "${file.name}" must have one of: file_token, file_url, file_base64, or resource_uri`
       });
+    }
+    const extError = validateFileExtension(file.name, file.file_url);
+    if (extError) {
+      return errorResponse({ type: "validation", message: extError });
     }
   }
   try {
@@ -2274,12 +2428,12 @@ function registerDocumentResource(server, client) {
 }
 function extractDocumentId(uri) {
   const host = uri.hostname;
-  const path9 = uri.pathname.replace(/^\/+/, "");
+  const path10 = uri.pathname.replace(/^\/+/, "");
   if (host && host.length > 0) {
-    return path9 ? `${host}/${path9}` : host;
+    return path10 ? `${host}/${path10}` : host;
   }
-  if (path9) {
-    return path9;
+  if (path10) {
+    return path10;
   }
   return null;
 }
@@ -2796,17 +2950,16 @@ async function handleTemplateCreate(client, input2, extra) {
     };
     const data = await client.post("/document_templates", payload);
     const warnings = [];
-    if (input2.text_tags && (!data.fields || data.fields.length === 0 || data.fields.every((f) => f.length === 0))) {
+    const hasFields = data.fields && data.fields.length > 0 && data.fields.some((f) => f.length > 0);
+    if (input2.text_tags && hasFields) {
+    } else if (input2.text_tags && !hasFields) {
       warnings.push(
-        "WARNING: text_tags was enabled but no fields were parsed from the PDF. Ensure your PDF contains valid text tags like {{signature:1:y}}, {{date:1:y}}, or {{text:1:y:Label}}. The signer number (1, 2, etc.) must match a placeholder id. See signwell://text-tags-guide for the complete syntax."
+        "NOTE: text_tags was enabled. SignWell may still be processing the tags. Open the template in the SignWell editor to verify fields were placed correctly. If fields are missing, ensure the PDF contains valid selectable text tags (e.g. {{signature:1:y}}) and the signer numbers match placeholder ids. See signwell://text-tags-guide for syntax details."
       );
-    }
-    if (!data.fields || data.fields.length === 0 || data.fields.every((f) => f.length === 0)) {
-      if (!input2.text_tags) {
-        warnings.push(
-          "WARNING: Template has no signature fields. You must either: (1) Add fields manually via the SignWell web editor at the embedded_edit_url, or (2) Use text_tags: true with a PDF containing text tag placeholders like {{signature:1:y}}."
-        );
-      }
+    } else if (!hasFields) {
+      warnings.push(
+        "WARNING: Template has no signature fields. You must either: (1) Add fields manually via the SignWell web editor at the embedded_edit_url, or (2) Use text_tags: true with a PDF containing text tag placeholders like {{signature:1:y}}."
+      );
     }
     return successResponse({
       type: "template_create",
@@ -3042,12 +3195,12 @@ function registerTemplateResource(server, client) {
 }
 function extractTemplateId(uri) {
   const host = uri.hostname;
-  const path9 = uri.pathname.replace(/^\/+/, "");
+  const path10 = uri.pathname.replace(/^\/+/, "");
   if (host && host.length > 0) {
-    return path9 ? `${host}/${path9}` : host;
+    return path10 ? `${host}/${path10}` : host;
   }
-  if (path9) {
-    return path9;
+  if (path10) {
+    return path10;
   }
   return null;
 }
@@ -3297,7 +3450,7 @@ Options:
     SIGNWELL_API_BASE_URL      Optional. Override the SignWell API base URL.
     SIGNWELL_API_TIMEOUT_MS    Optional. HTTP timeout override in milliseconds (default 90000).
 `.trim();
-async function main(argv = process8.argv.slice(2)) {
+async function main(argv = process9.argv.slice(2)) {
   if (argv.includes("--help") || argv.includes("-h")) {
     printHelp();
     return;
@@ -3318,7 +3471,7 @@ async function main(argv = process8.argv.slice(2)) {
     } else {
       console.error("[SignWell MCP] Failed to start server.", error);
     }
-    process8.exitCode = 1;
+    process9.exitCode = 1;
   }
 }
 function printHelp() {
@@ -3362,25 +3515,21 @@ function installSignalHandlers(server, transport) {
     console.error(`[SignWell MCP] Received ${signal}. Shutting down...`);
     await server.close();
     await transport.close();
-    process8.exit(0);
+    process9.exit(0);
   };
   ["SIGINT", "SIGTERM"].forEach((signal) => {
-    process8.once(signal, () => {
+    process9.once(signal, () => {
       shutdown(signal).catch((error) => {
         console.error("[SignWell MCP] Shutdown error:", error);
-        process8.exit(1);
+        process9.exit(1);
       });
     });
   });
 }
 function isEntryPoint() {
-  const meta = import.meta;
-  if (typeof meta.main === "boolean") {
-    return meta.main;
-  }
   try {
     const scriptPath = fileURLToPath2(import.meta.url);
-    const invokedPath = path8.resolve(process8.argv[1]);
+    const invokedPath = realpathSync(path9.resolve(process9.argv[1]));
     return invokedPath === scriptPath;
   } catch {
     return false;
@@ -3389,7 +3538,7 @@ function isEntryPoint() {
 if (isEntryPoint()) {
   main().catch((error) => {
     console.error("[SignWell MCP] Startup failed", error);
-    process8.exitCode = 1;
+    process9.exitCode = 1;
   });
 }
 export {

@@ -128,17 +128,11 @@ function installSignalHandlers(server: McpServer, transport: StdioServerTranspor
 }
 
 /**
- * Detect if this module is the entry point.
- * Works in both Node.js (ESM) and Bun runtimes.
+ * Detect if this module is the entry point (Node.js ESM).
  */
 function isEntryPoint(): boolean {
-  // Bun provides import.meta.main
-  const meta = import.meta as ImportMeta & { main?: boolean };
-  if (typeof meta.main === "boolean") {
-    return meta.main;
-  }
-  // Node.js ESM: compare import.meta.url with the executed script
-  // Resolve both to absolute paths to handle relative invocations (e.g., ./build/index.js)
+  // Compare import.meta.url with the executed script.
+  // Resolve both to absolute paths to handle relative invocations (e.g., ./build/index.js).
   try {
     const scriptPath = fileURLToPath(import.meta.url);
     const invokedPath = realpathSync(path.resolve(process.argv[1]));

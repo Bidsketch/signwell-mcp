@@ -51,8 +51,7 @@ const ConfigSchema = z.object({
 });
 
 export function loadEnv(options: { version?: string; quiet?: boolean } = {}): SignWellConfig {
-  const bunRuntime = globalThis as typeof globalThis & { Bun?: { isTest?: boolean } };
-  const quiet = options.quiet ?? detectTestMode(bunRuntime);
+  const quiet = options.quiet ?? detectTestMode();
   hydrateEnvFromDefaultFile();
   const envInput = {
     apiKey: clean(process.env.SIGNWELL_API_KEY),
@@ -99,13 +98,7 @@ function buildDefaultUserAgent(version?: string): string {
   return `signwell-mcp/${version ?? "dev"}`;
 }
 
-function detectTestMode(runtime: { Bun?: { isTest?: boolean } }): boolean {
-  if (typeof runtime.Bun?.isTest === "boolean") {
-    return runtime.Bun.isTest;
-  }
-  if (process.env.BUN_TESTING === "1" || process.env.BUN_TEST === "1") {
-    return true;
-  }
+function detectTestMode(): boolean {
   return process.env.NODE_ENV === "test";
 }
 
