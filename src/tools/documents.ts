@@ -82,6 +82,35 @@ type SendDraftInput = z.infer<typeof sendDraftSchema>;
 type ReminderInput = z.infer<typeof reminderSchema>;
 type CompletedPdfInput = z.infer<typeof completedPdfSchema>;
 
+const ALLOWED_FILE_EXTENSIONS = new Set([
+  ".pdf", ".doc", ".docx", ".pages",
+  ".ppt", ".pptx", ".key",
+  ".xls", ".xlsx", ".numbers",
+  ".jpg", ".jpeg", ".png", ".tiff", ".tif", ".webp",
+]);
+
+function extractExtension(filename: string): string {
+  const dot = filename.lastIndexOf(".");
+  return dot >= 0 ? filename.slice(dot).toLowerCase() : "";
+}
+
+function validateFileExtension(name: string, fileUrl?: string): string | undefined {
+  const ext = extractExtension(name);
+  if (!ext) {
+    return `File "${name}" is missing a file extension. Supported types: ${[...ALLOWED_FILE_EXTENSIONS].join(", ")}`;
+  }
+  if (!ALLOWED_FILE_EXTENSIONS.has(ext)) {
+    return `File "${name}" has unsupported extension "${ext}". Supported types: ${[...ALLOWED_FILE_EXTENSIONS].join(", ")}`;
+  }
+  if (fileUrl) {
+    const urlExt = extractExtension(new URL(fileUrl).pathname);
+    if (urlExt && !ALLOWED_FILE_EXTENSIONS.has(urlExt)) {
+      return `File URL for "${name}" points to unsupported type "${urlExt}". Supported types: ${[...ALLOWED_FILE_EXTENSIONS].join(", ")}`;
+    }
+  }
+  return undefined;
+}
+
 const COMPLETED_PDF_WARNING_THRESHOLD_BYTES = 5 * 1024 * 1024;
 type ReadResourceResult = z.infer<typeof ReadResourceResultSchema>;
 type ToolExtraRequest = { method: string; params?: unknown };
@@ -153,44 +182,47 @@ export function registerDocumentTools(server: McpServer, client: SignWellClient)
 
   register(
     "document_create",
-    `Create a SignWell document (draft by default).
+    `Create a SignWell document (always created as a draft).
 
-RECOMMENDED WORKFLOW:
-1. file_store (provide file_path, file_url, or resource_uri) → returns file_token
-2. file_validate_text_tags (pass file_token) → validates tags are extractable
-3. document_create (pass file_token in files array) → creates the document
+CRITICAL RULES:
+- Do NOT read, parse, extract, or verify file contents before uploading. The user already knows what is in the file.
+- Do NOT convert files between formats (e.g. do NOT convert .docx to .pdf). SignWell handles conversion automatically.
+- The user will place signature fields in the SignWell editor. Just upload the file and return the editor link.
 
-REQUIRED - You MUST provide these parameters:
+SUPPORTED FILE TYPES: .pdf, .doc, .docx, .pages, .ppt, .pptx, .key, .xls, .xlsx, .numbers, .jpg, .jpeg, .png, .tiff, .tif, .webp
+
+WORKFLOW FOR USER'S EXISTING FILES:
+1. file_store (call with NO arguments to open native file picker) → returns file_token
+2. document_create (pass file_token in files array) → creates draft, returns editor_url
+
+WORKFLOW FOR CLAUDE-GENERATED FILES:
+1. document_create with file_base64 directly (skip file_store) → creates draft, returns editor_url
+   Do NOT write the file to disk and pass a file_path — sandbox paths are inaccessible. Use file_base64.
+
+FILE ACCESS: Chat attachments and sandbox paths (/home/claude, /mnt/user-data) are inaccessible to the MCP server. Do NOT use resource_uri or sandbox file_path values. For existing files, call file_store with no arguments to open the native file picker.
+
+REQUIRED PARAMETERS:
 1. name: Document name
 2. recipients: Array with at least one object containing "id" and "email"
 3. files: Array with at least one object containing "name" and one of: "file_token" (recommended), "file_url", "file_base64", or "resource_uri"
 
-EXAMPLE (using file_token):
+EXAMPLE (docx via file_token — most common):
+{
+  "name": "NDA Agreement",
+  "recipients": [{"id": "1", "email": "signer@example.com"}],
+  "files": [{"name": "nda.docx", "file_token": "<token from file_store>"}]
+}
+
+EXAMPLE (pdf with text tags):
 {
   "name": "Contract",
   "text_tags": true,
   "recipients": [{"id": "1", "email": "signer@example.com"}],
-  "files": [{"name": "doc.pdf", "file_token": "<token from file_store>"}]
+  "files": [{"name": "contract.pdf", "file_token": "<token from file_store>"}]
 }
 
-EXAMPLE (inline base64):
-{
-  "name": "Contract",
-  "text_tags": true,
-  "recipients": [{"id": "1", "email": "signer@example.com"}],
-  "files": [{"name": "doc.pdf", "file_base64": "<base64-pdf>"}]
-}
-
-TEXT TAGS: Set text_tags: true if PDF contains signature placeholders like:
-- {{signature:1:y}} - Signature for recipient id "1"
-- {{date:1:y}} - Date field
-- {{text:1:y:Label}} - Text field
-
-The recipient "id" MUST match the number in text tags (id:"1" matches {{signature:1:y}}).
-
-CRITICAL: Text tags must be SELECTABLE/SEARCHABLE text in the PDF, not images or graphics.
-When generating PDFs, use text drawing methods with standard fonts. To verify: open the PDF
-and try to select/copy the tag text. If you can't select it, SignWell can't parse it.`,
+TEXT TAGS (optional): Set text_tags: true only if the document already contains signature placeholders like {{signature:1:y}}.
+The recipient "id" MUST match the number in text tags (id:"1" matches {{signature:1:y}}).`,
     createDocumentSchema,
     (input, extra) => handleCreateDocument(client, input, extra),
   );
@@ -240,13 +272,17 @@ async function handleCreateDocument(
   input: CreateDocumentInput,
   extra: ToolExtra,
 ): Promise<CallToolResult> {
-  // Validate files have at least one source (since we removed .refine() for JSON Schema compatibility)
   for (const file of input.files) {
     if (!file.file_token && !file.file_url && !file.file_base64 && !file.resource_uri) {
       return errorResponse({
         type: "validation",
         message: `File "${file.name}" must have one of: file_token, file_url, file_base64, or resource_uri`,
       });
+    }
+
+    const extError = validateFileExtension(file.name, file.file_url);
+    if (extError) {
+      return errorResponse({ type: "validation", message: extError });
     }
   }
 

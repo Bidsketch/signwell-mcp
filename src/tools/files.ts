@@ -50,7 +50,18 @@ export function registerFileTools(server: McpServer): number {
     "file_store",
     {
       description:
-        "Store a file for upcoming SignWell requests. Provide either a resource_uri (for @ attachments), a file_url, or a local file_path. When no value is provided, a native file picker opens (desktop only). Returns a file_token you can pass to document/template tools.",
+        `Store a user's existing file for upcoming SignWell requests. Returns a file_token you can pass to document/template tools.
+
+IMPORTANT: This tool is for the USER'S EXISTING FILES only. Do NOT read, parse, or convert the file — upload it as-is.
+
+HOW TO PROVIDE THE FILE (in order of preference):
+1. No arguments — Opens a native OS file picker dialog. USE THIS BY DEFAULT. Simply call file_store with no arguments and the user will select the file themselves.
+2. file_path — Only if the user explicitly provides a local path on their computer (e.g. ~/Documents/contract.docx).
+3. file_url — A publicly accessible URL to the file.
+
+CHAT ATTACHMENTS: When a user uploads/attaches a file in the chat, DO NOT use resource_uri — those are sandboxed and inaccessible. Instead, call file_store with NO arguments to open the native file picker.
+
+CLAUDE-GENERATED FILES: If YOU created the file content (e.g. generated a PDF), do NOT use file_store. Pass file_base64 directly to document_create instead.`,
       inputSchema: selectFileSchema,
     },
     async (input, extra) => handleFileStore(input as SelectFileInput, extra as ToolExtra),
@@ -238,6 +249,12 @@ function cleanupExpiredFiles(): void {
   }
 }
 
+const SANDBOX_PATH_PATTERNS = ["/home/claude", "/mnt/user-data", "/tmp/claude"];
+
+function isSandboxPath(filePath: string): boolean {
+  return SANDBOX_PATH_PATTERNS.some((p) => filePath.startsWith(p));
+}
+
 async function readLocalFile(
   filePath: string,
   nameOverride?: string,
@@ -246,14 +263,30 @@ async function readLocalFile(
   file_base64: string;
   size_bytes: number;
 }> {
-  const stats = await fs.stat(filePath);
-  enforceSizeLimit(stats.size);
-  const buffer = await fs.readFile(filePath);
-  return {
-    name: nameOverride ?? path.basename(filePath),
-    file_base64: buffer.toString("base64"),
-    size_bytes: buffer.byteLength,
-  };
+  try {
+    const stats = await fs.stat(filePath);
+    enforceSizeLimit(stats.size);
+    const buffer = await fs.readFile(filePath);
+    return {
+      name: nameOverride ?? path.basename(filePath),
+      file_base64: buffer.toString("base64"),
+      size_bytes: buffer.byteLength,
+    };
+  } catch (error: unknown) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error as NodeJS.ErrnoException).code === "ENOENT" &&
+      isSandboxPath(filePath)
+    ) {
+      throw new Error(
+        `The path "${filePath}" is inside the Claude sandbox and is not accessible to the MCP server. ` +
+          "If you generated this file, pass its content as file_base64 directly to document_create instead of using file_store. " +
+          "If this is a user's existing file, call file_store with no arguments to open the native file picker.",
+      );
+    }
+    throw error;
+  }
 }
 
 export async function pickFileUsingNativeDialog(
