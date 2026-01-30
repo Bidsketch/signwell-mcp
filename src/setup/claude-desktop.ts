@@ -99,17 +99,19 @@ function buildDesktopEntry(context: SetupRenderContext) {
   const entry: {
     command: string;
     args: string[];
-    cwd: string;
+    cwd?: string;
     metadata: { description: string };
     env?: Record<string, string>;
   } = {
     command: context.launchCommand.command,
     args: context.launchCommand.args,
-    cwd: context.repositoryPath,
     metadata: {
       description: "SignWell MCP server",
     },
   };
+  if (context.isLocalDev) {
+    entry.cwd = context.repositoryPath;
+  }
   if (context.environment && Object.keys(context.environment).length > 0) {
     entry.env = context.environment;
   }

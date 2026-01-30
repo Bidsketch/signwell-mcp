@@ -5,7 +5,6 @@
   "type": "module",
   "main": "build/index.js",
   "private": false,
-  "packageManager": "bun@1.2.23",
   "license": "MIT",
   "author": "Bidsketch, Inc.",
   "repository": {
@@ -38,14 +37,13 @@
     "signwell-mcp": "build/index.js"
   },
   "scripts": {
-    "dev": "bun run src/index.ts",
     "start": "node build/index.js",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "lint": "biome lint src test",
     "format": "biome format --write src test",
     "build": "esbuild src/index.ts --bundle --platform=node --target=node18 --format=esm --outfile=build/index.js --packages=external --banner:js=\"#!/usr/bin/env node\" --define:__PKG_VERSION__='\"'$(node -p \"require('./package.json').version\")'\"' && chmod +x build/index.js",
-    "prepublishOnly": "bun run build"
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.3",

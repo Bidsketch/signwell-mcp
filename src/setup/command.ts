@@ -12,19 +12,38 @@ function psQuote(value: string): string {
   return `'${escaped}'`;
 }
 
-export function buildPosixLaunch(envFilePath: string, entryPoint: string, runner: Runner): string {
+/**
+ * Resolve the absolute path to the `node` binary running this process.
+ * GUI-launched apps (Claude Desktop, Cursor, etc.) inherit a minimal PATH
+ * that may resolve `node` to an old system install. Using the absolute path
+ * ensures the same Node version that ran `setup` is used at runtime.
+ */
+function resolveNodeBin(): string {
+  return process.execPath;
+}
+
+export function buildPosixLaunch(
+  envFilePath: string,
+  entryPoint: string,
+  runner: Runner,
+  isLocalDev: boolean,
+): string {
   const envFile = shellQuote(envFilePath);
-  const entry = shellQuote(entryPoint);
-  return `set -a && . ${envFile} && set +a && node ${entry}`;
+  const nodeBin = shellQuote(resolveNodeBin());
+  const runCmd = isLocalDev
+    ? `${nodeBin} ${shellQuote(entryPoint)}`
+    : `${nodeBin} ${shellQuote(resolveNpxBin())} -y signwell-mcp`;
+  return `set -a && . ${envFile} && set +a && ${runCmd}`;
 }
 
 export function buildPowerShellLaunch(
   envFilePath: string,
   entryPoint: string,
   runner: Runner,
+  isLocalDev: boolean,
 ): string {
   const envFile = psQuote(envFilePath);
-  const entry = psQuote(entryPoint);
+  const nodeBin = psQuote(resolveNodeBin());
   const scriptParts = [
     `$envFile = ${envFile}`,
     "if (Test-Path -LiteralPath $envFile) {",
@@ -40,14 +59,26 @@ export function buildPowerShellLaunch(
     "  }",
     "}",
   ];
-  scriptParts.push(`node ${entry}`);
+  const runCmd = isLocalDev
+    ? `${nodeBin} ${psQuote(entryPoint)}`
+    : `${nodeBin} ${psQuote(resolveNpxBin())} -y signwell-mcp`;
+  scriptParts.push(runCmd);
   return scriptParts.join("; ");
+}
+
+/**
+ * Resolve the absolute path to `npx` next to the current `node` binary.
+ */
+function resolveNpxBin(): string {
+  const nodeDir = process.execPath.replace(/[/\\]node([.][a-z]+)?$/i, "");
+  return `${nodeDir}/npx`;
 }
 
 export function buildLaunchCommand(
   envFilePath: string,
   entryPoint: string,
   runner: Runner,
+  isLocalDev: boolean,
 ): LaunchCommand {
   if (process.platform === "win32") {
     return {
@@ -57,13 +88,13 @@ export function buildLaunchCommand(
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
-        buildPowerShellLaunch(envFilePath, entryPoint, runner),
+        buildPowerShellLaunch(envFilePath, entryPoint, runner, isLocalDev),
       ],
     };
   }
 
   return {
     command: "/bin/sh",
-    args: ["-c", buildPosixLaunch(envFilePath, entryPoint, runner)],
+    args: ["-c", buildPosixLaunch(envFilePath, entryPoint, runner, isLocalDev)],
   };
 }

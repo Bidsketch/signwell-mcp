@@ -1,4 +1,27 @@
 node_modules/
 build/
 *.tsbuildinfo
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment / secrets
+.env
+.env.*
+
+# npm
+*.tgz
+npm-pack-test/
+
+# Bun
+bun.lock
+
+# Test / coverage
+coverage/

@@ -764,29 +764,28 @@ async function handleTemplateCreate(
     };
     const data = await client.post<TemplateResponse>("/document_templates", payload);
 
-    // Check for text_tags issues - if text_tags was enabled but no fields were parsed
     const warnings: string[] = [];
-    if (
-      input.text_tags &&
-      (!data.fields || data.fields.length === 0 || data.fields.every((f) => f.length === 0))
-    ) {
-      warnings.push(
-        "WARNING: text_tags was enabled but no fields were parsed from the PDF. " +
-          "Ensure your PDF contains valid text tags like {{signature:1:y}}, {{date:1:y}}, or {{text:1:y:Label}}. " +
-          "The signer number (1, 2, etc.) must match a placeholder id. " +
-          "See signwell://text-tags-guide for the complete syntax.",
-      );
-    }
+    const hasFields =
+      data.fields && data.fields.length > 0 && data.fields.some((f) => f.length > 0);
 
-    // Check if template has no fields at all (can't be used for signing)
-    if (!data.fields || data.fields.length === 0 || data.fields.every((f) => f.length === 0)) {
-      if (!input.text_tags) {
-        warnings.push(
-          "WARNING: Template has no signature fields. You must either: " +
-            "(1) Add fields manually via the SignWell web editor at the embedded_edit_url, or " +
-            "(2) Use text_tags: true with a PDF containing text tag placeholders like {{signature:1:y}}.",
-        );
-      }
+    if (input.text_tags && hasFields) {
+      // Fields were detected immediately — text tags parsed successfully
+    } else if (input.text_tags && !hasFields) {
+      // SignWell often processes text tags asynchronously — fields may not
+      // appear in the initial API response but will be visible in the editor.
+      warnings.push(
+        "NOTE: text_tags was enabled. SignWell may still be processing the tags. " +
+          "Open the template in the SignWell editor to verify fields were placed correctly. " +
+          "If fields are missing, ensure the PDF contains valid selectable text tags " +
+          "(e.g. {{signature:1:y}}) and the signer numbers match placeholder ids. " +
+          "See signwell://text-tags-guide for syntax details.",
+      );
+    } else if (!hasFields) {
+      warnings.push(
+        "WARNING: Template has no signature fields. You must either: " +
+          "(1) Add fields manually via the SignWell web editor at the embedded_edit_url, or " +
+          "(2) Use text_tags: true with a PDF containing text tag placeholders like {{signature:1:y}}.",
+      );
     }
 
     return successResponse({

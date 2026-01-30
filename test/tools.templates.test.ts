@@ -533,7 +533,7 @@ describe("registerTemplateTools", () => {
     const payload = parseResult(result);
     expect(payload.ok).toBe(true);
     expect(payload.warnings).toBeDefined();
-    expect((payload.warnings as string[])[0]).toContain("no fields were parsed");
+    expect((payload.warnings as string[])[0]).toContain("text_tags was enabled");
     expect((payload.warnings as string[])[0]).toContain("{{signature:1:y}}");
   });
 

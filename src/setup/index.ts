@@ -128,6 +128,7 @@ export async function runSetup(args: string[], options: SetupOptions = {}): Prom
   const runner = entryResolution?.runner ?? "node";
   const entryPoint =
     entryResolution?.entryPoint ?? path.resolve(repositoryPath, "build/index.js");
+  const isLocalDev = entryResolution?.isLocalDev ?? false;
   const launchEnvironment = resolveLaunchEnvironment(flags);
 
   if (!fs.existsSync(entryPoint)) {
@@ -141,7 +142,8 @@ export async function runSetup(args: string[], options: SetupOptions = {}): Prom
     repositoryPath,
     entryPoint,
     runner,
-    launchCommand: buildLaunchCommand(envResult.path, entryPoint, runner),
+    isLocalDev,
+    launchCommand: buildLaunchCommand(envResult.path, entryPoint, runner, isLocalDev),
     environment: launchEnvironment,
   };
 
@@ -451,6 +453,7 @@ type EntryPointResolution = {
   entryPoint: string;
   repositoryPath: string;
   runner: Runner;
+  isLocalDev: boolean;
 };
 
 function resolveEntryPoint(): EntryPointResolution | undefined {
@@ -477,6 +480,7 @@ function resolveLocalSourceEntry(): EntryPointResolution | undefined {
     entryPoint: path.resolve(path.dirname(entryPath), "..", "build", "index.js"),
     repositoryPath: inferRepositoryPath(entryPath),
     runner: "node",
+    isLocalDev: true,
   };
 }
 
@@ -490,6 +494,7 @@ function resolveLocalBuildEntry(): EntryPointResolution | undefined {
     entryPoint: entryPath,
     repositoryPath: inferRepositoryPath(entryPath),
     runner: "node",
+    isLocalDev: true,
   };
 }
 
@@ -517,6 +522,7 @@ function resolveRuntimeEntryPoint(): EntryPointResolution | undefined {
         entryPoint: resolved,
         repositoryPath: inferRepositoryPath(resolved),
         runner: "node",
+        isLocalDev: false,
       };
     } catch {}
   }

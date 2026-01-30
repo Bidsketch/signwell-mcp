@@ -2,6 +2,8 @@ import process from "node:process";
 
 import { z } from "zod";
 
+import { readEnvFileSync } from "./env-file.ts";
+
 export interface SignWellConfig {
   apiKey: string;
   baseUrl: string;
@@ -25,6 +27,14 @@ export const DEFAULT_BASE_URL = "https://www.signwell.com/api/v1";
 export const DEFAULT_TIMEOUT_MS = 90_000;
 export const MAX_TIMEOUT_MS = 180_000;
 
+type EnvKey = "SIGNWELL_API_KEY" | "SIGNWELL_API_BASE_URL" | "SIGNWELL_API_TIMEOUT_MS";
+
+const REQUIRED_KEYS: EnvKey[] = [
+  "SIGNWELL_API_KEY",
+  "SIGNWELL_API_BASE_URL",
+  "SIGNWELL_API_TIMEOUT_MS",
+];
+
 const ConfigSchema = z.object({
   apiKey: z.string().min(1, { message: "SIGNWELL_API_KEY is required." }),
   baseUrl: z.string().url({ message: "SIGNWELL_API_BASE_URL must be a valid URL." }),
@@ -41,8 +51,8 @@ const ConfigSchema = z.object({
 });
 
 export function loadEnv(options: { version?: string; quiet?: boolean } = {}): SignWellConfig {
-  const bunRuntime = globalThis as typeof globalThis & { Bun?: { isTest?: boolean } };
-  const quiet = options.quiet ?? detectTestMode(bunRuntime);
+  const quiet = options.quiet ?? detectTestMode();
+  hydrateEnvFromDefaultFile();
   const envInput = {
     apiKey: clean(process.env.SIGNWELL_API_KEY),
     baseUrl: clean(process.env.SIGNWELL_API_BASE_URL) ?? DEFAULT_BASE_URL,
@@ -88,12 +98,27 @@ function buildDefaultUserAgent(version?: string): string {
   return `signwell-mcp/${version ?? "dev"}`;
 }
 
-function detectTestMode(runtime: { Bun?: { isTest?: boolean } }): boolean {
-  if (typeof runtime.Bun?.isTest === "boolean") {
-    return runtime.Bun.isTest;
-  }
-  if (process.env.BUN_TESTING === "1" || process.env.BUN_TEST === "1") {
-    return true;
-  }
+function detectTestMode(): boolean {
   return process.env.NODE_ENV === "test";
+}
+
+function hydrateEnvFromDefaultFile(): void {
+  const missingKeys = REQUIRED_KEYS.filter((key) => isUnset(process.env[key]));
+  if (missingKeys.length === 0) {
+    return;
+  }
+  const fileValues = readEnvFileSync();
+  if (!fileValues) {
+    return;
+  }
+  for (const key of missingKeys) {
+    const value = fileValues[key];
+    if (typeof value === "string" && value.length > 0 && isUnset(process.env[key])) {
+      process.env[key] = value;
+    }
+  }
+}
+
+function isUnset(value: string | undefined): boolean {
+  return typeof value !== "string" || value.trim().length === 0;
 }

@@ -96,15 +96,15 @@ describe("setup client snippets", () => {
 
 describe("launch command helpers", () => {
   test("posix launch quotes paths", () => {
-    const result = buildPosixLaunch("/tmp/my env", "/repo/build/index.js", "node");
+    const result = buildPosixLaunch("/tmp/my env", "/repo/build/index.js", "node", true);
     expect(result).toContain(". '/tmp/my env'");
-    expect(result).toContain("node '/repo/build/index.js'");
+    expect(result).toContain("'/repo/build/index.js'");
   });
 
   test("powershell launch emits script", () => {
-    const script = buildPowerShellLaunch("C:/Secrets/.env", "C:/repo/build/index.js", "node");
+    const script = buildPowerShellLaunch("C:/Secrets/.env", "C:/repo/build/index.js", "node", true);
     expect(script).toContain("Test-Path");
-    expect(script).toContain("node ");
+    expect(script).toContain("'C:/repo/build/index.js'");
   });
 });
 
