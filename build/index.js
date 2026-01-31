@@ -1692,35 +1692,264 @@ import { ReadResourceResultSchema as ReadResourceResultSchema2 } from "@modelcon
 import { z as z3 } from "zod";
 
 // src/utils/docx-generator.ts
-import { Document, Packer, Paragraph, TextRun } from "docx";
-async function textToDocx(text) {
-  const paragraphs = text.split("\n").map((line) => {
-    if (line.trim().startsWith("# ")) {
-      return new Paragraph({
-        children: [new TextRun({ text: line.replace("# ", ""), bold: true, size: 32 })],
-        spacing: { after: 200 }
+import {
+  Document,
+  HeadingLevel,
+  Packer,
+  Paragraph,
+  TextRun
+} from "docx";
+function parseMarkdown(text) {
+  const lines = text.split("\n");
+  const tokens = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (trimmed === "") {
+      i++;
+      continue;
+    }
+    if (/^[-*_]{3,}$/.test(trimmed)) {
+      tokens.push({ type: "horizontal_rule", content: "" });
+      i++;
+      continue;
+    }
+    const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
+    if (headingMatch) {
+      tokens.push({
+        type: "heading",
+        level: headingMatch[1].length,
+        content: headingMatch[2]
       });
+      i++;
+      continue;
     }
-    if (line.trim().startsWith("## ")) {
-      return new Paragraph({
-        children: [new TextRun({ text: line.replace("## ", ""), bold: true, size: 28 })],
-        spacing: { after: 150 }
+    if (trimmed.startsWith("```")) {
+      const lang = trimmed.slice(3).trim();
+      const codeLines = [];
+      i++;
+      while (i < lines.length && !lines[i].trim().startsWith("```")) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      tokens.push({
+        type: "code",
+        content: codeLines.join("\n")
       });
+      i++;
+      continue;
     }
-    if (line.trim().startsWith("### ")) {
-      return new Paragraph({
-        children: [new TextRun({ text: line.replace("### ", ""), bold: true, size: 24 })],
-        spacing: { after: 100 }
+    if (trimmed.startsWith(">")) {
+      const quoteLines = [];
+      while (i < lines.length && lines[i].trim().startsWith(">")) {
+        quoteLines.push(lines[i].trim().slice(1).trim());
+        i++;
+      }
+      tokens.push({
+        type: "blockquote",
+        content: quoteLines.join(" ")
       });
+      continue;
     }
-    if (line.trim() === "") {
-      return new Paragraph({ text: "" });
+    const unorderedMatch = trimmed.match(/^[-*+]\s+(.+)$/);
+    const orderedMatch = trimmed.match(/^\d+\.\s+(.+)$/);
+    if (unorderedMatch || orderedMatch) {
+      const isOrdered = !!orderedMatch;
+      const items = [];
+      while (i < lines.length) {
+        const currentLine = lines[i];
+        const currentTrimmed = currentLine.trim();
+        const uMatch = currentTrimmed.match(/^[-*+]\s+(.+)$/);
+        const oMatch = currentTrimmed.match(/^\d+\.\s+(.+)$/);
+        if (isOrdered && oMatch || !isOrdered && uMatch) {
+          items.push(isOrdered ? oMatch[1] : uMatch[1]);
+          i++;
+        } else if (currentTrimmed === "" || currentTrimmed.startsWith("- ") || currentTrimmed.startsWith("* ") || /^\d+\./.test(currentTrimmed)) {
+          break;
+        } else {
+          items[items.length - 1] += " " + currentTrimmed;
+          i++;
+        }
+      }
+      tokens.push({
+        type: "list",
+        items,
+        ordered: isOrdered,
+        content: ""
+      });
+      continue;
     }
-    return new Paragraph({
-      children: [new TextRun({ text: line })],
-      spacing: { after: 100 }
+    const paraLines = [line];
+    i++;
+    while (i < lines.length && lines[i].trim() !== "" && !lines[i].trim().startsWith("#") && !lines[i].trim().startsWith(">") && !lines[i].trim().startsWith("- ") && !lines[i].trim().startsWith("* ") && !/^\d+\./.test(lines[i].trim()) && !lines[i].trim().startsWith("```")) {
+      paraLines.push(lines[i]);
+      i++;
+    }
+    tokens.push({
+      type: "paragraph",
+      content: paraLines.join(" ")
     });
-  });
+  }
+  return tokens;
+}
+function parseInlineFormatting(text) {
+  const runs = [];
+  const remaining = text;
+  let currentText = "";
+  let isBold = false;
+  let isItalic = false;
+  const flushCurrent = () => {
+    if (currentText) {
+      runs.push(
+        new TextRun({
+          text: currentText,
+          bold: isBold,
+          italics: isItalic
+        })
+      );
+      currentText = "";
+    }
+  };
+  let i = 0;
+  while (i < remaining.length) {
+    const char = remaining[i];
+    const nextChar = remaining[i + 1];
+    if (char === "*" && nextChar === "*") {
+      flushCurrent();
+      isBold = !isBold;
+      i += 2;
+      continue;
+    }
+    if (char === "_" && nextChar === "_") {
+      flushCurrent();
+      isBold = !isBold;
+      i += 2;
+      continue;
+    }
+    if (char === "*" && nextChar !== "*") {
+      flushCurrent();
+      isItalic = !isItalic;
+      i += 1;
+      continue;
+    }
+    if (char === "_" && nextChar !== "_") {
+      flushCurrent();
+      isItalic = !isItalic;
+      i += 1;
+      continue;
+    }
+    if (char === "`") {
+      flushCurrent();
+      let code = "";
+      i++;
+      while (i < remaining.length && remaining[i] !== "`") {
+        code += remaining[i];
+        i++;
+      }
+      if (i < remaining.length) i++;
+      runs.push(
+        new TextRun({
+          text: code,
+          font: "Courier New",
+          italics: true
+        })
+      );
+      continue;
+    }
+    currentText += char;
+    i++;
+  }
+  flushCurrent();
+  return runs;
+}
+async function textToDocx(text) {
+  const tokens = parseMarkdown(text);
+  const paragraphs = [];
+  for (const token of tokens) {
+    switch (token.type) {
+      case "heading": {
+        const level = token.level || 1;
+        const size = level === 1 ? 32 : level === 2 ? 28 : level === 3 ? 26 : level === 4 ? 24 : 22;
+        paragraphs.push(
+          new Paragraph({
+            children: parseInlineFormatting(token.content),
+            heading: level === 1 ? HeadingLevel.HEADING_1 : level === 2 ? HeadingLevel.HEADING_2 : level === 3 ? HeadingLevel.HEADING_3 : level === 4 ? HeadingLevel.HEADING_4 : level === 5 ? HeadingLevel.HEADING_5 : HeadingLevel.HEADING_6,
+            spacing: { after: 200 }
+          })
+        );
+        break;
+      }
+      case "paragraph": {
+        paragraphs.push(
+          new Paragraph({
+            children: parseInlineFormatting(token.content),
+            spacing: { after: 120 }
+          })
+        );
+        break;
+      }
+      case "list": {
+        if (token.items) {
+          token.items.forEach((item, index) => {
+            paragraphs.push(
+              new Paragraph({
+                children: parseInlineFormatting(item),
+                bullet: token.ordered ? {
+                  level: 0
+                } : {
+                  level: 0
+                },
+                spacing: { after: 80 }
+              })
+            );
+          });
+        }
+        break;
+      }
+      case "blockquote": {
+        paragraphs.push(
+          new Paragraph({
+            children: parseInlineFormatting(token.content),
+            indent: { left: 720 },
+            spacing: { after: 120 }
+          })
+        );
+        break;
+      }
+      case "code": {
+        paragraphs.push(
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: token.content,
+                font: "Courier New",
+                size: 20
+              })
+            ],
+            spacing: { after: 120 }
+          })
+        );
+        break;
+      }
+      case "horizontal_rule": {
+        paragraphs.push(
+          new Paragraph({
+            border: {
+              bottom: {
+                color: "999999",
+                space: 1,
+                style: "single",
+                size: 6
+              }
+            },
+            spacing: { before: 200, after: 200 }
+          })
+        );
+        break;
+      }
+    }
+  }
   const doc = new Document({
     sections: [
       {
