@@ -3,11 +3,11 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { ReadResourceResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-
+import { isDebugEnabled } from "../config/env.ts";
 import type { SignWellClient } from "../signwell/client.ts";
 import { SignWellError } from "../signwell/errors.ts";
+import { textToDocx } from "../utils/docx-generator.ts";
 import { errorResponse, successResponse } from "../utils/responses.ts";
-import { isDebugEnabled } from "../config/env.ts";
 import { getStoredFile } from "./files.ts";
 
 function debugLog(message: string, data?: unknown): void {
@@ -126,7 +126,7 @@ export interface TemplateResponse {
 // NOTE: Avoiding .refine() as it doesn't serialize to JSON Schema for MCP
 // ─────────────────────────────────────────────────────────────────────────────
 
-// File schema - must provide name and one of: file_url, file_base64, or resource_uri
+// File schema - must provide name and one of: file_url, file_base64, resource_uri, or content_text
 const templateFileSchema = z.object({
   name: z.string().describe("REQUIRED. Filename with extension (e.g., 'contract.pdf')."),
   file_token: z
@@ -138,6 +138,12 @@ const templateFileSchema = z.object({
   file_url: z.string().optional().describe("Public URL to download the file."),
   file_base64: z.string().optional().describe("Base64-encoded file content."),
   resource_uri: z.string().optional().describe("MCP resource URI for the file."),
+  content_text: z
+    .string()
+    .optional()
+    .describe(
+      "Plain text or Markdown content to convert to DOCX. When provided, the MCP server generates a DOCX file automatically. Use this instead of file_base64 to avoid UI freezing with large documents.",
+    ),
 });
 
 // Placeholder schema - represents a signing role
@@ -574,11 +580,10 @@ export function registerTemplateTools(server: McpServer, client: SignWellClient)
             `template_create requires 'files' and 'placeholders' arrays. Example:\n` +
               `{\n` +
               `  "name": "My Template",\n` +
-              `  "files": [{"name": "doc.pdf", "file_base64": "<base64-encoded-pdf>"}],\n` +
-              `  "placeholders": [{"id": "1", "name": "Signer"}],\n` +
-              `  "text_tags": true\n` +
+              `  "files": [{"name": "doc.docx", "content_text": "# Agreement\\n\\nThis contract..."}],\n` +
+              `  "placeholders": [{"id": "1", "name": "Signer"}]\n` +
               `}\n\n` +
-              `You must convert the PDF file to base64 first, then pass it in the files array.`,
+              `Use "content_text" for generated content (auto-converts to DOCX). For existing files, use "file_token" from file_store.`,
           );
         }
       }
@@ -610,7 +615,14 @@ RECOMMENDED WORKFLOW:
 3. template_create (pass file_token in files array) → creates the template
 
 REQUIRED PARAMETERS (both are mandatory):
-- files: Array with at least one file object containing "name" and one of: "file_token" (recommended), "file_base64", "file_url", or "resource_uri"
+- files: Array with at least one file object containing:
+  * "name": Filename (e.g., "template.docx")
+  * One content source (in order of preference):
+    - "content_text": Plain text/Markdown to auto-convert to DOCX (RECOMMENDED for generated content)
+    - "file_token": Token from file_store (recommended for uploaded files)
+    - "file_base64": Base64-encoded file content
+    - "file_url": Public URL to the file
+    - "resource_uri": MCP resource URI
 - placeholders: Array with at least one placeholder object containing "id" and "name"
 
 STEP-BY-STEP EXAMPLE (using file_token):
@@ -737,10 +749,16 @@ async function handleTemplateCreate(
 ): Promise<CallToolResult> {
   // Validate files have content (since we can't use .refine() for JSON Schema compatibility)
   for (const file of input.files) {
-    if (!file.file_token && !file.file_url && !file.file_base64 && !file.resource_uri) {
+    if (
+      !file.file_token &&
+      !file.file_url &&
+      !file.file_base64 &&
+      !file.resource_uri &&
+      !file.content_text
+    ) {
       return errorResponse({
         type: "validation",
-        message: `File "${file.name}" must have one of: file_token, file_url, file_base64, or resource_uri`,
+        message: `File "${file.name}" must have one of: file_token, file_url, file_base64, resource_uri, or content_text`,
       });
     }
   }
@@ -968,6 +986,15 @@ async function resolveFileInputs(
         return {
           name: file.name,
           file_base64,
+        };
+      }
+
+      if (file.content_text) {
+        const docxBuffer = await textToDocx(file.content_text);
+        const docxName = file.name.endsWith(".docx") ? file.name : `${file.name}.docx`;
+        return {
+          name: docxName,
+          file_base64: docxBuffer.toString("base64"),
         };
       }
 
