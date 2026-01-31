@@ -1688,7 +1688,49 @@ async function wait(ms) {
 // src/tools/documents.ts
 import { Buffer as Buffer2 } from "node:buffer";
 import { writeFile } from "node:fs/promises";
+import { ReadResourceResultSchema as ReadResourceResultSchema2 } from "@modelcontextprotocol/sdk/types.js";
 import { z as z3 } from "zod";
+
+// src/utils/docx-generator.ts
+import { Document, Packer, Paragraph, TextRun } from "docx";
+async function textToDocx(text) {
+  const paragraphs = text.split("\n").map((line) => {
+    if (line.trim().startsWith("# ")) {
+      return new Paragraph({
+        children: [new TextRun({ text: line.replace("# ", ""), bold: true, size: 32 })],
+        spacing: { after: 200 }
+      });
+    }
+    if (line.trim().startsWith("## ")) {
+      return new Paragraph({
+        children: [new TextRun({ text: line.replace("## ", ""), bold: true, size: 28 })],
+        spacing: { after: 150 }
+      });
+    }
+    if (line.trim().startsWith("### ")) {
+      return new Paragraph({
+        children: [new TextRun({ text: line.replace("### ", ""), bold: true, size: 24 })],
+        spacing: { after: 100 }
+      });
+    }
+    if (line.trim() === "") {
+      return new Paragraph({ text: "" });
+    }
+    return new Paragraph({
+      children: [new TextRun({ text: line })],
+      spacing: { after: 100 }
+    });
+  });
+  const doc = new Document({
+    sections: [
+      {
+        properties: {},
+        children: paragraphs
+      }
+    ]
+  });
+  return Packer.toBuffer(doc);
+}
 
 // src/utils/responses.ts
 function render(payload) {
@@ -1727,9 +1769,6 @@ function validationError(message, details) {
     error: details
   });
 }
-
-// src/tools/documents.ts
-import { ReadResourceResultSchema as ReadResourceResultSchema2 } from "@modelcontextprotocol/sdk/types.js";
 
 // src/tools/files.ts
 import { exec } from "node:child_process";
@@ -1968,7 +2007,10 @@ var fileSchema = z3.object({
   ),
   file_url: z3.string().url().optional(),
   file_base64: z3.string().optional(),
-  resource_uri: z3.string().optional()
+  resource_uri: z3.string().optional(),
+  content_text: z3.string().optional().describe(
+    "Plain text or Markdown content to convert to DOCX. When provided, the MCP server generates a DOCX file automatically. Use this instead of file_base64 to avoid UI freezing with large documents."
+  )
 });
 var createDocumentSchema = z3.object({
   name: z3.string().min(1, { message: "Document name is required." }),
@@ -2108,15 +2150,32 @@ WORKFLOW FOR USER'S EXISTING FILES:
 2. document_create (pass file_token in files array) \u2192 creates draft, returns editor_url
 
 WORKFLOW FOR CLAUDE-GENERATED FILES:
-1. document_create with file_base64 directly (skip file_store) \u2192 creates draft, returns editor_url
+1. document_create with content_text directly (RECOMMENDED) \u2192 MCP server converts to DOCX automatically
+   Pass plain text or Markdown as content_text. The server generates a DOCX file without base64 overhead.
+   
+2. document_create with file_base64 directly (skip file_store) \u2192 creates draft, returns editor_url
    Do NOT write the file to disk and pass a file_path \u2014 sandbox paths are inaccessible. Use file_base64.
+   
+   Example using content_text:
+   {
+     "name": "Service Agreement",
+     "recipients": [{"id": "1", "email": "client@example.com"}],
+     "files": [{"name": "agreement.docx", "content_text": "# Service Agreement\\n\\nThis agreement between..."}]
+   }
 
 FILE ACCESS: Chat attachments and sandbox paths (/home/claude, /mnt/user-data) are inaccessible to the MCP server. Do NOT use resource_uri or sandbox file_path values. For existing files, call file_store with no arguments to open the native file picker.
 
 REQUIRED PARAMETERS:
 1. name: Document name
 2. recipients: Array with at least one object containing "id" and "email"
-3. files: Array with at least one object containing "name" and one of: "file_token" (recommended), "file_url", "file_base64", or "resource_uri"
+3. files: Array with at least one file object containing:
+   - "name": Filename (e.g., "contract.docx")
+   - One content source (in order of preference):
+     * "content_text": Plain text or Markdown to auto-convert to DOCX (RECOMMENDED for Claude-generated content)
+     * "file_token": Token from file_store (recommended for user files)
+     * "file_url": Public URL to the file
+     * "file_base64": Base64-encoded file content
+     * "resource_uri": MCP resource URI
 
 EXAMPLE (docx via file_token \u2014 most common):
 {
@@ -2173,10 +2232,10 @@ The recipient "id" MUST match the number in text tags (id:"1" matches {{signatur
 }
 async function handleCreateDocument(client, input2, extra) {
   for (const file of input2.files) {
-    if (!file.file_token && !file.file_url && !file.file_base64 && !file.resource_uri) {
+    if (!file.file_token && !file.file_url && !file.file_base64 && !file.resource_uri && !file.content_text) {
       return errorResponse({
         type: "validation",
-        message: `File "${file.name}" must have one of: file_token, file_url, file_base64, or resource_uri`
+        message: `File "${file.name}" must have one of: content_text, file_token, file_url, file_base64, or resource_uri`
       });
     }
     const extError = validateFileExtension(file.name, file.file_url);
@@ -2459,6 +2518,14 @@ async function resolveFileInputs(files, extra) {
           file_base64
         };
       }
+      if (file.content_text) {
+        const docxBuffer = await textToDocx(file.content_text);
+        const docxName = file.name.endsWith(".docx") ? file.name : `${file.name}.docx`;
+        return {
+          name: docxName,
+          file_base64: docxBuffer.toString("base64")
+        };
+      }
       return {
         name: file.name,
         file_url: file.file_url,
@@ -2510,7 +2577,10 @@ var templateFileSchema = z4.object({
   ),
   file_url: z4.string().optional().describe("Public URL to download the file."),
   file_base64: z4.string().optional().describe("Base64-encoded file content."),
-  resource_uri: z4.string().optional().describe("MCP resource URI for the file.")
+  resource_uri: z4.string().optional().describe("MCP resource URI for the file."),
+  content_text: z4.string().optional().describe(
+    "Plain text or Markdown content to convert to DOCX. When provided, the MCP server generates a DOCX file automatically. Use this instead of file_base64 to avoid UI freezing with large documents."
+  )
 });
 var placeholderSchema = z4.object({
   id: z4.string().describe(
@@ -2783,12 +2853,11 @@ function registerTemplateTools(server, client) {
             `template_create requires 'files' and 'placeholders' arrays. Example:
 {
   "name": "My Template",
-  "files": [{"name": "doc.pdf", "file_base64": "<base64-encoded-pdf>"}],
-  "placeholders": [{"id": "1", "name": "Signer"}],
-  "text_tags": true
+  "files": [{"name": "doc.docx", "content_text": "# Agreement\\n\\nThis contract..."}],
+  "placeholders": [{"id": "1", "name": "Signer"}]
 }
 
-You must convert the PDF file to base64 first, then pass it in the files array.`
+Use "content_text" for generated content (auto-converts to DOCX). For existing files, use "file_token" from file_store.`
           );
         }
       }
@@ -2816,7 +2885,14 @@ RECOMMENDED WORKFLOW:
 3. template_create (pass file_token in files array) \u2192 creates the template
 
 REQUIRED PARAMETERS (both are mandatory):
-- files: Array with at least one file object containing "name" and one of: "file_token" (recommended), "file_base64", "file_url", or "resource_uri"
+- files: Array with at least one file object containing:
+  * "name": Filename (e.g., "template.docx")
+  * One content source (in order of preference):
+    - "content_text": Plain text/Markdown to auto-convert to DOCX (RECOMMENDED for generated content)
+    - "file_token": Token from file_store (recommended for uploaded files)
+    - "file_base64": Base64-encoded file content
+    - "file_url": Public URL to the file
+    - "resource_uri": MCP resource URI
 - placeholders: Array with at least one placeholder object containing "id" and "name"
 
 STEP-BY-STEP EXAMPLE (using file_token):
@@ -2926,10 +3002,10 @@ Set draft: false to send immediately for signing.`,
 }
 async function handleTemplateCreate(client, input2, extra) {
   for (const file of input2.files) {
-    if (!file.file_token && !file.file_url && !file.file_base64 && !file.resource_uri) {
+    if (!file.file_token && !file.file_url && !file.file_base64 && !file.resource_uri && !file.content_text) {
       return errorResponse({
         type: "validation",
-        message: `File "${file.name}" must have one of: file_token, file_url, file_base64, or resource_uri`
+        message: `File "${file.name}" must have one of: file_token, file_url, file_base64, resource_uri, or content_text`
       });
     }
   }
@@ -3097,6 +3173,14 @@ async function resolveFileInputs2(files, extra) {
         return {
           name: file.name,
           file_base64
+        };
+      }
+      if (file.content_text) {
+        const docxBuffer = await textToDocx(file.content_text);
+        const docxName = file.name.endsWith(".docx") ? file.name : `${file.name}.docx`;
+        return {
+          name: docxName,
+          file_base64: docxBuffer.toString("base64")
         };
       }
       return {

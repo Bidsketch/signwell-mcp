@@ -2,12 +2,12 @@ import { Buffer } from "node:buffer";
 import { writeFile } from "node:fs/promises";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { ReadResourceResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-
 import type { SignWellClient } from "../signwell/client.ts";
 import { SignWellError } from "../signwell/errors.ts";
+import { textToDocx } from "../utils/docx-generator.ts";
 import { errorResponse, successResponse, validationError } from "../utils/responses.ts";
-import { ReadResourceResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { getStoredFile } from "./files.ts";
 
 const recipientSchema = z.object({
@@ -29,6 +29,12 @@ const fileSchema = z.object({
   file_url: z.string().url().optional(),
   file_base64: z.string().optional(),
   resource_uri: z.string().optional(),
+  content_text: z
+    .string()
+    .optional()
+    .describe(
+      "Plain text or Markdown content to convert to DOCX. When provided, the MCP server generates a DOCX file automatically. Use this instead of file_base64 to avoid UI freezing with large documents.",
+    ),
 });
 
 const createDocumentSchema = z.object({
@@ -83,10 +89,22 @@ type ReminderInput = z.infer<typeof reminderSchema>;
 type CompletedPdfInput = z.infer<typeof completedPdfSchema>;
 
 const ALLOWED_FILE_EXTENSIONS = new Set([
-  ".pdf", ".doc", ".docx", ".pages",
-  ".ppt", ".pptx", ".key",
-  ".xls", ".xlsx", ".numbers",
-  ".jpg", ".jpeg", ".png", ".tiff", ".tif", ".webp",
+  ".pdf",
+  ".doc",
+  ".docx",
+  ".pages",
+  ".ppt",
+  ".pptx",
+  ".key",
+  ".xls",
+  ".xlsx",
+  ".numbers",
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".tiff",
+  ".tif",
+  ".webp",
 ]);
 
 function extractExtension(filename: string): string {
@@ -196,15 +214,32 @@ WORKFLOW FOR USER'S EXISTING FILES:
 2. document_create (pass file_token in files array) → creates draft, returns editor_url
 
 WORKFLOW FOR CLAUDE-GENERATED FILES:
-1. document_create with file_base64 directly (skip file_store) → creates draft, returns editor_url
+1. document_create with content_text directly (RECOMMENDED) → MCP server converts to DOCX automatically
+   Pass plain text or Markdown as content_text. The server generates a DOCX file without base64 overhead.
+   
+2. document_create with file_base64 directly (skip file_store) → creates draft, returns editor_url
    Do NOT write the file to disk and pass a file_path — sandbox paths are inaccessible. Use file_base64.
+   
+   Example using content_text:
+   {
+     "name": "Service Agreement",
+     "recipients": [{"id": "1", "email": "client@example.com"}],
+     "files": [{"name": "agreement.docx", "content_text": "# Service Agreement\\n\\nThis agreement between..."}]
+   }
 
 FILE ACCESS: Chat attachments and sandbox paths (/home/claude, /mnt/user-data) are inaccessible to the MCP server. Do NOT use resource_uri or sandbox file_path values. For existing files, call file_store with no arguments to open the native file picker.
 
 REQUIRED PARAMETERS:
 1. name: Document name
 2. recipients: Array with at least one object containing "id" and "email"
-3. files: Array with at least one object containing "name" and one of: "file_token" (recommended), "file_url", "file_base64", or "resource_uri"
+3. files: Array with at least one file object containing:
+   - "name": Filename (e.g., "contract.docx")
+   - One content source (in order of preference):
+     * "content_text": Plain text or Markdown to auto-convert to DOCX (RECOMMENDED for Claude-generated content)
+     * "file_token": Token from file_store (recommended for user files)
+     * "file_url": Public URL to the file
+     * "file_base64": Base64-encoded file content
+     * "resource_uri": MCP resource URI
 
 EXAMPLE (docx via file_token — most common):
 {
@@ -273,10 +308,16 @@ async function handleCreateDocument(
   extra: ToolExtra,
 ): Promise<CallToolResult> {
   for (const file of input.files) {
-    if (!file.file_token && !file.file_url && !file.file_base64 && !file.resource_uri) {
+    if (
+      !file.file_token &&
+      !file.file_url &&
+      !file.file_base64 &&
+      !file.resource_uri &&
+      !file.content_text
+    ) {
       return errorResponse({
         type: "validation",
-        message: `File "${file.name}" must have one of: file_token, file_url, file_base64, or resource_uri`,
+        message: `File "${file.name}" must have one of: content_text, file_token, file_url, file_base64, or resource_uri`,
       });
     }
 
@@ -632,6 +673,15 @@ async function resolveFileInputs(
         return {
           name: file.name,
           file_base64,
+        };
+      }
+
+      if (file.content_text) {
+        const docxBuffer = await textToDocx(file.content_text);
+        const docxName = file.name.endsWith(".docx") ? file.name : `${file.name}.docx`;
+        return {
+          name: docxName,
+          file_base64: docxBuffer.toString("base64"),
         };
       }
 
