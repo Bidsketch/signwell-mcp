@@ -2,9 +2,8 @@ import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
-
-import { getConfigRoot, getEnvFilePath, parseEnvFile } from "../config/env-file.ts";
 import { DEFAULT_BASE_URL, DEFAULT_TIMEOUT_MS } from "../config/env.ts";
+import { getEnvFilePath, parseEnvFile } from "../config/env-file.ts";
 
 export type EnvValues = {
   apiKey: string;
