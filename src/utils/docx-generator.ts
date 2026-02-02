@@ -151,7 +151,71 @@ function parseMarkdown(text: string): MarkdownToken[] {
   return tokens;
 }
 
+// Signwell tag pattern: {{anything}} where anything doesn't contain { or }
+// This handles tags like {{signature}}, {{text:2:y:Full Name}}, {{date:1:y}}, etc.
+const SIGNWELL_TAG_REGEX = /\{\{[^{}]+\}\}/g;
+
+interface TextSegment {
+  text: string;
+  isSignwellTag: boolean;
+}
+
+function splitBySignwellTags(text: string): TextSegment[] {
+  const segments: TextSegment[] = [];
+  let lastIndex = 0;
+
+  for (const match of text.matchAll(SIGNWELL_TAG_REGEX)) {
+    // Add text before the tag
+    if (match.index > lastIndex) {
+      segments.push({
+        text: text.slice(lastIndex, match.index),
+        isSignwellTag: false,
+      });
+    }
+    // Add the Signwell tag
+    segments.push({
+      text: match[0],
+      isSignwellTag: true,
+    });
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Add remaining text after last tag
+  if (lastIndex < text.length) {
+    segments.push({
+      text: text.slice(lastIndex),
+      isSignwellTag: false,
+    });
+  }
+
+  return segments;
+}
+
 function parseInlineFormatting(text: string): TextRun[] {
+  const runs: TextRun[] = [];
+
+  // First, split text by Signwell tags
+  const segments = splitBySignwellTags(text);
+
+  for (const segment of segments) {
+    if (segment.isSignwellTag) {
+      // Signwell tags get white color
+      runs.push(
+        new TextRun({
+          text: segment.text,
+          color: "FFFFFF",
+        }),
+      );
+    } else {
+      // Process non-tag text for inline formatting
+      runs.push(...parseInlineFormattingForSegment(segment.text));
+    }
+  }
+
+  return runs;
+}
+
+function parseInlineFormattingForSegment(text: string): TextRun[] {
   const runs: TextRun[] = [];
   const remaining = text;
   let currentText = "";
