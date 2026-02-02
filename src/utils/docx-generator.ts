@@ -1,13 +1,4 @@
-import {
-  AlignmentType,
-  Document,
-  HeadingLevel,
-  LevelFormat,
-  Packer,
-  Paragraph,
-  TextRun,
-  UnderlineType,
-} from "docx";
+import { Document, HeadingLevel, Packer, Paragraph, TextRun } from "docx";
 
 interface MarkdownToken {
   type: "heading" | "paragraph" | "list" | "blockquote" | "code" | "horizontal_rule";
@@ -53,7 +44,6 @@ function parseMarkdown(text: string): MarkdownToken[] {
 
     // Code block
     if (trimmed.startsWith("```")) {
-      const lang = trimmed.slice(3).trim();
       const codeLines: string[] = [];
       i++;
       while (i < lines.length && !lines[i].trim().startsWith("```")) {
@@ -99,7 +89,7 @@ function parseMarkdown(text: string): MarkdownToken[] {
         const oMatch = currentTrimmed.match(/^\d+\.\s+(.+)$/);
 
         if ((isOrdered && oMatch) || (!isOrdered && uMatch)) {
-          items.push(isOrdered ? oMatch![1] : uMatch![1]);
+          items.push(isOrdered ? (oMatch?.[1] ?? "") : (uMatch?.[1] ?? ""));
           i++;
         } else if (
           currentTrimmed === "" ||
@@ -111,7 +101,7 @@ function parseMarkdown(text: string): MarkdownToken[] {
           break;
         } else {
           // Continuation of previous item (indented content)
-          items[items.length - 1] += " " + currentTrimmed;
+          items[items.length - 1] += ` ${currentTrimmed}`;
           i++;
         }
       }
@@ -308,7 +298,6 @@ export async function textToDocx(text: string): Promise<Buffer> {
     switch (token.type) {
       case "heading": {
         const level = token.level || 1;
-        const size = level === 1 ? 32 : level === 2 ? 28 : level === 3 ? 26 : level === 4 ? 24 : 22;
         paragraphs.push(
           new Paragraph({
             children: parseInlineFormatting(token.content),
@@ -342,21 +331,17 @@ export async function textToDocx(text: string): Promise<Buffer> {
 
       case "list": {
         if (token.items) {
-          token.items.forEach((item, index) => {
+          for (const item of token.items) {
             paragraphs.push(
               new Paragraph({
                 children: parseInlineFormatting(item),
-                bullet: token.ordered
-                  ? {
-                      level: 0,
-                    }
-                  : {
-                      level: 0,
-                    },
+                bullet: {
+                  level: 0,
+                },
                 spacing: { after: 80 },
               }),
             );
-          });
+          }
         }
         break;
       }

@@ -25,7 +25,7 @@ function resolveNodeBin(): string {
 export function buildPosixLaunch(
   envFilePath: string,
   entryPoint: string,
-  runner: Runner,
+  _runner: Runner,
   isLocalDev: boolean,
 ): string {
   const envFile = shellQuote(envFilePath);
@@ -39,7 +39,7 @@ export function buildPosixLaunch(
 export function buildPowerShellLaunch(
   envFilePath: string,
   entryPoint: string,
-  runner: Runner,
+  _runner: Runner,
   isLocalDev: boolean,
 ): string {
   const envFile = psQuote(envFilePath);

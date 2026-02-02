@@ -870,13 +870,13 @@ function psQuote(value) {
 function resolveNodeBin() {
   return process5.execPath;
 }
-function buildPosixLaunch(envFilePath, entryPoint, runner, isLocalDev) {
+function buildPosixLaunch(envFilePath, entryPoint, _runner, isLocalDev) {
   const envFile = shellQuote(envFilePath);
   const nodeBin = shellQuote(resolveNodeBin());
   const runCmd = isLocalDev ? `${nodeBin} ${shellQuote(entryPoint)}` : `${nodeBin} ${shellQuote(resolveNpxBin())} -y signwell-mcp`;
   return `set -a && . ${envFile} && set +a && ${runCmd}`;
 }
-function buildPowerShellLaunch(envFilePath, entryPoint, runner, isLocalDev) {
+function buildPowerShellLaunch(envFilePath, entryPoint, _runner, isLocalDev) {
   const envFile = psQuote(envFilePath);
   const nodeBin = psQuote(resolveNodeBin());
   const scriptParts = [
@@ -1692,13 +1692,7 @@ import { ReadResourceResultSchema as ReadResourceResultSchema2 } from "@modelcon
 import { z as z3 } from "zod";
 
 // src/utils/docx-generator.ts
-import {
-  Document,
-  HeadingLevel,
-  Packer,
-  Paragraph,
-  TextRun
-} from "docx";
+import { Document, HeadingLevel, Packer, Paragraph, TextRun } from "docx";
 function parseMarkdown(text) {
   const lines = text.split("\n");
   const tokens = [];
@@ -1726,7 +1720,6 @@ function parseMarkdown(text) {
       continue;
     }
     if (trimmed.startsWith("```")) {
-      const lang = trimmed.slice(3).trim();
       const codeLines = [];
       i++;
       while (i < lines.length && !lines[i].trim().startsWith("```")) {
@@ -1763,12 +1756,12 @@ function parseMarkdown(text) {
         const uMatch = currentTrimmed.match(/^[-*+]\s+(.+)$/);
         const oMatch = currentTrimmed.match(/^\d+\.\s+(.+)$/);
         if (isOrdered && oMatch || !isOrdered && uMatch) {
-          items.push(isOrdered ? oMatch[1] : uMatch[1]);
+          items.push(isOrdered ? oMatch?.[1] ?? "" : uMatch?.[1] ?? "");
           i++;
         } else if (currentTrimmed === "" || currentTrimmed.startsWith("- ") || currentTrimmed.startsWith("* ") || /^\d+\./.test(currentTrimmed)) {
           break;
         } else {
-          items[items.length - 1] += " " + currentTrimmed;
+          items[items.length - 1] += ` ${currentTrimmed}`;
           i++;
         }
       }
@@ -1912,7 +1905,6 @@ async function textToDocx(text) {
     switch (token.type) {
       case "heading": {
         const level = token.level || 1;
-        const size = level === 1 ? 32 : level === 2 ? 28 : level === 3 ? 26 : level === 4 ? 24 : 22;
         paragraphs.push(
           new Paragraph({
             children: parseInlineFormatting(token.content),
@@ -1933,19 +1925,17 @@ async function textToDocx(text) {
       }
       case "list": {
         if (token.items) {
-          token.items.forEach((item, index) => {
+          for (const item of token.items) {
             paragraphs.push(
               new Paragraph({
                 children: parseInlineFormatting(item),
-                bullet: token.ordered ? {
-                  level: 0
-                } : {
+                bullet: {
                   level: 0
                 },
                 spacing: { after: 80 }
               })
             );
-          });
+          }
         }
         break;
       }
