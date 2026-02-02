@@ -1793,7 +1793,49 @@ function parseMarkdown(text) {
   }
   return tokens;
 }
+var SIGNWELL_TAG_REGEX = /\{\{[^{}]+\}\}/g;
+function splitBySignwellTags(text) {
+  const segments = [];
+  let lastIndex = 0;
+  for (const match of text.matchAll(SIGNWELL_TAG_REGEX)) {
+    if (match.index > lastIndex) {
+      segments.push({
+        text: text.slice(lastIndex, match.index),
+        isSignwellTag: false
+      });
+    }
+    segments.push({
+      text: match[0],
+      isSignwellTag: true
+    });
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    segments.push({
+      text: text.slice(lastIndex),
+      isSignwellTag: false
+    });
+  }
+  return segments;
+}
 function parseInlineFormatting(text) {
+  const runs = [];
+  const segments = splitBySignwellTags(text);
+  for (const segment of segments) {
+    if (segment.isSignwellTag) {
+      runs.push(
+        new TextRun({
+          text: segment.text,
+          color: "FFFFFF"
+        })
+      );
+    } else {
+      runs.push(...parseInlineFormattingForSegment(segment.text));
+    }
+  }
+  return runs;
+}
+function parseInlineFormattingForSegment(text) {
   const runs = [];
   const remaining = text;
   let currentText = "";
