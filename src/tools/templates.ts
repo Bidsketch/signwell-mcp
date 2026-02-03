@@ -514,7 +514,7 @@ const createFromTemplateSchema = z.object({
   message: z.string().max(4000).optional(),
   subject: z.string().optional(),
   metadata: z.record(z.string(), z.string()).optional(),
-  draft: z.boolean().default(true).optional(),
+  draft: z.boolean().default(false).optional(),
   embedded_signing: z.boolean().default(false).optional(),
   embedded_signing_notifications: z.boolean().default(false).optional(),
   text_tags: z.boolean().default(false).optional(),
@@ -707,7 +707,9 @@ COMMON ERRORS:
 
   register(
     "template_create_document",
-    `Create a document from a template (draft by default).
+    `Create and send a document from a template. Templates are pre-configured and ready to send, so this tool sends the document for signing by default.
+
+IMPORTANT: When a user asks to "send a template" or "send a document from a template", the document will be sent immediately for signing. Set draft: true ONLY if the user explicitly asks to create a draft or review before sending.
 
 REQUIRED:
 - template_id: The template ID to create the document from
@@ -726,9 +728,7 @@ Example:
     "email": "client@example.com",
     "name": "John Doe"
   }]
-}
-
-Set draft: false to send immediately for signing.`,
+}`,
     createFromTemplateSchema,
     (input, extra) => handleCreateDocumentFromTemplate(client, input, extra),
   );
@@ -915,21 +915,21 @@ async function handleCreateDocumentFromTemplate(
       return recipientRest;
     });
 
+    const draft = input.draft ?? false;
     const payload = {
       template_id,
       ...rest,
       recipients: processedRecipients,
       ...(resolvedFiles && { files: resolvedFiles }),
-      draft: input.draft ?? true,
+      draft,
     };
 
     const data = await client.post("/document_templates/documents", payload);
     return successResponse({
       type: "template_create_document",
-      message:
-        input.draft === false
-          ? "Document created and sent."
-          : "Document draft created from template.",
+      message: draft
+        ? "Document draft created from template. It has NOT been sent yet. Use document_send_draft to send it when ready."
+        : "Document has been sent for signing. Recipients will receive an email to sign the document.",
       data,
     });
   } catch (error) {

@@ -80,7 +80,7 @@ describe("registerTemplateTools", () => {
     ]);
   });
 
-  test("create document from template defaults to draft", async () => {
+  test("create document from template defaults to sending", async () => {
     const { handlers, client } = setupTemplateTools();
     const handler = handlers.get("template_create_document");
     if (!handler) throw new Error("handler missing");
@@ -95,11 +95,14 @@ describe("registerTemplateTools", () => {
       path: "/document_templates/documents",
     });
     const body = client.calls[0]?.payload as Record<string, unknown>;
-    expect(body.draft).toBe(true);
+    expect(body.draft).toBe(false);
 
     const payload = parseResult(result);
     expect(payload.ok).toBe(true);
     expect(payload.type).toBe("template_create_document");
+    expect(payload.message).toBe(
+      "Document has been sent for signing. Recipients will receive an email to sign the document.",
+    );
   });
 
   test("template errors propagate SignWellError metadata", async () => {
@@ -362,7 +365,9 @@ describe("registerTemplateTools", () => {
 
     const payload = parseResult(result);
     expect(payload.ok).toBe(true);
-    expect(payload.message).toBe("Document created and sent.");
+    expect(payload.message).toBe(
+      "Document has been sent for signing. Recipients will receive an email to sign the document.",
+    );
   });
 
   test("template_create_document strips send_email when embedded_signing is false", async () => {
