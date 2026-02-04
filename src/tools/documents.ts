@@ -3,6 +3,7 @@ import { writeFile } from "node:fs/promises";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { ReadResourceResultSchema } from "@modelcontextprotocol/sdk/types.js";
+import type { GetPromptResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type { SignWellClient } from "../signwell/client.ts";
 import { SignWellError } from "../signwell/errors.ts";
@@ -37,12 +38,73 @@ const fileSchema = z.object({
     ),
 });
 
+const copiedContactSchema = z.object({
+  email: z.string().email({ message: "Copied contact email must be valid." }),
+  name: z.string().optional().describe("Name of the CC recipient."),
+});
+
 const createDocumentSchema = z.object({
   name: z.string().min(1, { message: "Document name is required." }),
   recipients: z.array(recipientSchema).min(1, { message: "At least one recipient is required." }),
   files: z.array(fileSchema).min(1, { message: "Include at least one file." }),
-  message: z.string().optional(),
+  subject: z.string().optional().describe("Email subject line recipients will see."),
+  message: z.string().optional().describe("Email message recipients will see."),
   text_tags: z.boolean().optional(),
+  draft: z
+    .boolean()
+    .optional()
+    .describe("If true, document is created as a draft and not sent. Default: false."),
+  apply_signing_order: z
+    .boolean()
+    .default(false)
+    .optional()
+    .describe(
+      "When true, recipients sign one at a time in the order of the recipients array.",
+    ),
+  copied_contacts: z
+    .array(copiedContactSchema)
+    .optional()
+    .describe("CC recipients who receive the final signed document by email."),
+  expires_in: z
+    .number()
+    .int()
+    .min(1)
+    .max(365)
+    .optional()
+    .describe("Days before the signature request expires (max 365)."),
+  reminders: z
+    .boolean()
+    .default(true)
+    .optional()
+    .describe("Send signing reminders on day 3, 6, and 10."),
+  allow_decline: z
+    .boolean()
+    .default(true)
+    .optional()
+    .describe("Allow recipients to decline signing."),
+  allow_reassign: z
+    .boolean()
+    .default(true)
+    .optional()
+    .describe("Allow recipients to reassign to someone else."),
+  redirect_url: z.string().url().optional().describe("URL to redirect after successful signing."),
+  decline_redirect_url: z
+    .string()
+    .url()
+    .optional()
+    .describe("URL to redirect if document is declined."),
+  metadata: z
+    .record(z.string(), z.string())
+    .optional()
+    .describe("Key-value metadata (max 50 pairs, key max 40 chars, value max 500 chars)."),
+  embedded_signing: z.boolean().default(false).optional().describe("Enable embedded signing."),
+  embedded_signing_notifications: z
+    .boolean()
+    .default(false)
+    .optional()
+    .describe("Send completion notifications when using embedded signing."),
+  custom_requester_name: z.string().optional().describe("Custom requester name on communications."),
+  custom_requester_email: z.string().email().optional().describe("Custom requester email on communications."),
 });
 
 const listDocumentsSchema = z.object({
@@ -297,7 +359,7 @@ The recipient "id" MUST match the number in text tags (id:"1" matches {{signatur
     (input, extra) => handleCompletedPdf(client, input, extra),
   );
 
-  registerDocumentResource(server, client);
+  registerDocumentPrompt(server, client);
 
   return count;
 }
@@ -559,94 +621,29 @@ function toToolError(error: unknown, fallback: string): CallToolResult {
   });
 }
 
-function registerDocumentResource(server: McpServer, client: SignWellClient): void {
-  const readCallback = async (uri: URL) => {
-    const documentId = extractDocumentId(uri);
-    if (!documentId) {
+function registerDocumentPrompt(server: McpServer, client: SignWellClient): void {
+  server.registerPrompt(
+    "search_document",
+    {
+      title: "Fetch a SignWell document",
+      description: "Fetch SignWell document summary by id.",
+      argsSchema: { document_id: z.string() },
+    },
+    async ({ document_id }): Promise<GetPromptResult> => {
+      const data = await client.get(`/documents/${document_id}`);
       return {
-        contents: [
+        messages: [
           {
-            uri: uri.toString(),
-            mimeType: "text/plain",
-            text: "Missing document id.",
+            role: "user",
+            content: {
+              type: "text",
+              text: `${JSON.stringify(data, null, 2)}\n\nSummarize this document.`,
+            },
           },
         ],
       };
-    }
-
-    try {
-      const data = await client.get(`/documents/${documentId}`);
-      return {
-        contents: [
-          {
-            uri: uri.toString(),
-            mimeType: "application/json",
-            text: JSON.stringify(data, null, 2),
-          },
-        ],
-      };
-    } catch (error) {
-      const message =
-        error instanceof SignWellError
-          ? `Failed to fetch SignWell document (${error.type}): ${error.message}`
-          : "Unexpected error fetching SignWell document.";
-      return {
-        contents: [
-          {
-            uri: uri.toString(),
-            mimeType: "text/plain",
-            text: message,
-          },
-        ],
-      };
-    }
-  };
-
-  if (typeof server.registerResource === "function") {
-    server.registerResource(
-      "document_resource",
-      "document://{document_id}",
-      {
-        title: "SignWell document resource",
-        description: "Fetch SignWell document summary by id.",
-      },
-      readCallback,
-    );
-    return;
-  }
-
-  const legacyServer = server as unknown as {
-    resource?: (
-      name: string,
-      uri: string,
-      meta: Record<string, unknown>,
-      readCb: typeof readCallback,
-    ) => unknown;
-  };
-
-  if (typeof legacyServer.resource === "function") {
-    legacyServer.resource(
-      "document_resource",
-      "document://{document_id}",
-      {
-        title: "SignWell document resource",
-        description: "Fetch SignWell document summary by id.",
-      },
-      readCallback,
-    );
-  }
-}
-
-function extractDocumentId(uri: URL): string | null {
-  const host = uri.hostname;
-  const path = uri.pathname.replace(/^\/+/, "");
-  if (host && host.length > 0) {
-    return path ? `${host}/${path}` : host;
-  }
-  if (path) {
-    return path;
-  }
-  return null;
+    },
+  );
 }
 
 async function resolveFileInputs(

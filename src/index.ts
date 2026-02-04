@@ -7,7 +7,6 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
 import { EnvError, loadEnv } from "./config/env.ts";
-import { registerTextTagsResource } from "./resources/text-tags.ts";
 import { runSetup } from "./setup/index.ts";
 import { SignWellClient } from "./signwell/client.ts";
 import { registerDocumentTools } from "./tools/documents.ts";
@@ -105,7 +104,6 @@ function registerTools(server: McpServer, client: SignWellClient): number {
   toolCount += registerValidateTools(server);
   toolCount += registerDocumentTools(server, client);
   toolCount += registerTemplateTools(server, client);
-  registerTextTagsResource(server);
   return toolCount;
 }
 
