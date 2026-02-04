@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { ReadResourceResultSchema } from "@modelcontextprotocol/sdk/types.js";
+import type { GetPromptResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { isDebugEnabled } from "../config/env.ts";
 import type { SignWellClient } from "../signwell/client.ts";
@@ -518,6 +519,13 @@ const createFromTemplateSchema = z.object({
   embedded_signing: z.boolean().default(false).optional(),
   embedded_signing_notifications: z.boolean().default(false).optional(),
   text_tags: z.boolean().default(false).optional(),
+  apply_signing_order: z
+    .boolean()
+    .default(false)
+    .optional()
+    .describe(
+      "When true, recipients sign one at a time in the order of the recipients array.",
+    ),
   custom_requester_name: z.string().optional(),
   custom_requester_email: z.string().email().optional(),
   redirect_url: z.string().url().optional(),
@@ -733,7 +741,7 @@ Example:
     (input, extra) => handleCreateDocumentFromTemplate(client, input, extra),
   );
 
-  registerTemplateResource(server, client);
+  registerTemplatePrompt(server, client);
 
   return count;
 }
@@ -796,7 +804,7 @@ async function handleTemplateCreate(
           "Open the template in the SignWell editor to verify fields were placed correctly. " +
           "If fields are missing, ensure the PDF contains valid selectable text tags " +
           "(e.g. {{signature:1:y}}) and the signer numbers match placeholder ids. " +
-          "See signwell://text-tags-guide for syntax details.",
+          "See the text tags documentation for syntax details.",
       );
     } else if (!hasFields) {
       warnings.push(
@@ -1037,95 +1045,30 @@ async function fetchResourceAsBase64(resourceUri: string, extra: ToolExtra): Pro
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Resource Registration
+// Prompt Registration
 // ─────────────────────────────────────────────────────────────────────────────
 
-function registerTemplateResource(server: McpServer, client: SignWellClient): void {
-  const readCallback = async (uri: URL) => {
-    const templateId = extractTemplateId(uri);
-    if (!templateId) {
+function registerTemplatePrompt(server: McpServer, client: SignWellClient): void {
+  server.registerPrompt(
+    "search_template",
+    {
+      title: "Fetch a SignWell template",
+      description: "Fetch SignWell template summary by id.",
+      argsSchema: { template_id: z.string() },
+    },
+    async ({ template_id }): Promise<GetPromptResult> => {
+      const data = await client.get(`/document_templates/${template_id}`);
       return {
-        contents: [
+        messages: [
           {
-            uri: uri.toString(),
-            mimeType: "text/plain",
-            text: "Missing template id.",
+            role: "user",
+            content: {
+              type: "text",
+              text: `${JSON.stringify(data, null, 2)}\n\nSummarize this template.`,
+            },
           },
         ],
       };
-    }
-
-    try {
-      const data = await client.get(`/document_templates/${templateId}`);
-      return {
-        contents: [
-          {
-            uri: uri.toString(),
-            mimeType: "application/json",
-            text: JSON.stringify(data, null, 2),
-          },
-        ],
-      };
-    } catch (error) {
-      const message =
-        error instanceof SignWellError
-          ? `Failed to fetch SignWell template (${error.type}): ${error.message}`
-          : "Unexpected error fetching SignWell template.";
-      return {
-        contents: [
-          {
-            uri: uri.toString(),
-            mimeType: "text/plain",
-            text: message,
-          },
-        ],
-      };
-    }
-  };
-
-  if (typeof server.registerResource === "function") {
-    server.registerResource(
-      "template_resource",
-      "template://{template_id}",
-      {
-        title: "SignWell template resource",
-        description: "Fetch SignWell template summary by id.",
-      },
-      readCallback,
-    );
-    return;
-  }
-
-  const legacyServer = server as unknown as {
-    resource?: (
-      name: string,
-      uri: string,
-      meta: Record<string, unknown>,
-      readCb: typeof readCallback,
-    ) => unknown;
-  };
-
-  if (typeof legacyServer.resource === "function") {
-    legacyServer.resource(
-      "template_resource",
-      "template://{template_id}",
-      {
-        title: "SignWell template resource",
-        description: "Fetch SignWell template summary by id.",
-      },
-      readCallback,
-    );
-  }
-}
-
-function extractTemplateId(uri: URL): string | null {
-  const host = uri.hostname;
-  const path = uri.pathname.replace(/^\/+/, "");
-  if (host && host.length > 0) {
-    return path ? `${host}/${path}` : host;
-  }
-  if (path) {
-    return path;
-  }
-  return null;
+    },
+  );
 }

@@ -45,27 +45,29 @@ class MockClient {
 
 type ToolHandler = (input: Record<string, unknown>) => Promise<CallToolResult>;
 
-type ResourceHandler = (uri: URL) => Promise<{
-  contents: Array<{ uri: string; mimeType?: string; text: string }>;
+type PromptHandler = (args: Record<string, unknown>) => Promise<{
+  messages: Array<{ role: string; content: { type: string; text: string } }>;
 }>;
 
 function setupTools() {
   const handlers = new Map<string, ToolHandler>();
-  let resourceHandler: ResourceHandler | null = null;
+  let promptHandler: PromptHandler | null = null;
+  let promptName = "";
   const serverStub = {
     registerTool: (_name: string, _config: unknown, handler: ToolHandler) => {
       handlers.set(_name, handler);
       return {} as unknown;
     },
-    registerResource: (_name: string, _uri: string, _meta: unknown, readCb: ResourceHandler) => {
-      resourceHandler = readCb;
+    registerPrompt: (_name: string, _config: unknown, cb: PromptHandler) => {
+      promptName = _name;
+      promptHandler = cb;
       return {} as unknown;
     },
   } satisfies Partial<McpServer>;
 
   const client = new MockClient();
   const count = registerDocumentTools(serverStub as unknown as McpServer, client as never);
-  return { handlers, client, count, resourceHandler };
+  return { handlers, client, count, promptHandler, promptName };
 }
 
 function parseResult(result: CallToolResult) {
@@ -451,6 +453,7 @@ describe("registerDocumentTools", () => {
         handlers.set(_name, handler);
         return {} as unknown;
       },
+      registerPrompt: () => ({}) as unknown,
     } satisfies Partial<McpServer>;
 
     const client = new MockClient();
@@ -481,19 +484,21 @@ describe("registerDocumentTools", () => {
     expect(payload.data).toMatchObject({ requestId: "req_123", status: 401 });
   });
 
-  test("document resource delegates to SignWell client", async () => {
-    const { resourceHandler, client } = setupTools();
-    if (!resourceHandler) {
-      throw new Error("resource handler missing");
+  test("document prompt delegates to SignWell client", async () => {
+    const { promptHandler, promptName, client } = setupTools();
+    if (!promptHandler) {
+      throw new Error("prompt handler missing");
     }
+    expect(promptName).toBe("search_document");
+
     client.getResponse = { id: "doc_1", status: "sent" };
 
-    const response = await resourceHandler(new URL("document://doc_1"));
+    const response = await promptHandler({ document_id: "doc_1" });
 
     expect(client.calls.find((c) => c.method === "get")?.path).toBe("/documents/doc_1");
-    expect(response.contents[0]).toMatchObject({
-      uri: "document://doc_1",
-    });
-    expect(response.contents[0]?.text).toContain("doc_1");
+    expect(response.messages).toHaveLength(1);
+    expect(response.messages[0]?.role).toBe("user");
+    expect(response.messages[0]?.content.text).toContain("doc_1");
+    expect(response.messages[0]?.content.text).toContain("Summarize this document");
   });
 });

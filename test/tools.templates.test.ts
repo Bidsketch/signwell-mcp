@@ -38,27 +38,29 @@ class MockClient {
 }
 
 type ToolHandler = (input: Record<string, unknown>) => Promise<CallToolResult>;
-type ResourceHandler = (uri: URL) => Promise<{
-  contents: Array<{ uri: string; mimeType?: string; text: string }>;
+type PromptHandler = (args: Record<string, unknown>) => Promise<{
+  messages: Array<{ role: string; content: { type: string; text: string } }>;
 }>;
 
 function setupTemplateTools() {
   const handlers = new Map<string, ToolHandler>();
-  let resourceHandler: ResourceHandler | null = null;
+  let promptHandler: PromptHandler | null = null;
+  let promptName = "";
   const serverStub = {
     registerTool: (_name: string, _config: unknown, handler: ToolHandler) => {
       handlers.set(_name, handler);
       return {} as unknown;
     },
-    registerResource: (_name: string, _uri: string, _meta: unknown, readCb: ResourceHandler) => {
-      resourceHandler = readCb;
+    registerPrompt: (_name: string, _config: unknown, cb: PromptHandler) => {
+      promptName = _name;
+      promptHandler = cb;
       return {} as unknown;
     },
   } satisfies Partial<McpServer>;
 
   const client = new MockClient();
   const count = registerTemplateTools(serverStub as unknown as McpServer, client as never);
-  return { handlers, client, count, resourceHandler };
+  return { handlers, client, count, promptHandler, promptName };
 }
 
 function parseResult(result: CallToolResult) {
@@ -129,23 +131,24 @@ describe("registerTemplateTools", () => {
     expect(payload.data).toMatchObject({ status: 401, requestId: "req_456" });
   });
 
-  test("template resource delegates to SignWell client", async () => {
-    const { resourceHandler, client } = setupTemplateTools();
-    if (!resourceHandler) {
-      throw new Error("resource handler missing");
+  test("template prompt delegates to SignWell client", async () => {
+    const { promptHandler, promptName, client } = setupTemplateTools();
+    if (!promptHandler) {
+      throw new Error("prompt handler missing");
     }
+    expect(promptName).toBe("search_template");
+
     client.responses["/document_templates/tmp_1"] = { id: "tmp_1", status: "draft" };
 
-    const response = await resourceHandler(new URL("template://tmp_1"));
+    const response = await promptHandler({ template_id: "tmp_1" });
 
     expect(client.calls.find((call) => call.method === "get")?.path).toBe(
       "/document_templates/tmp_1",
     );
-    expect(response.contents[0]).toMatchObject({
-      uri: "template://tmp_1",
-      mimeType: "application/json",
-    });
-    expect(response.contents[0]?.text).toContain("tmp_1");
+    expect(response.messages).toHaveLength(1);
+    expect(response.messages[0]?.role).toBe("user");
+    expect(response.messages[0]?.content.text).toContain("tmp_1");
+    expect(response.messages[0]?.content.text).toContain("Summarize this template");
   });
 
   test("template_create uses correct endpoint and defaults to draft", async () => {

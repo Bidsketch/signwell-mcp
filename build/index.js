@@ -159,245 +159,6 @@ function isUnset(value) {
   return typeof value !== "string" || value.trim().length === 0;
 }
 
-// src/resources/text-tags.ts
-var TEXT_TAGS_GUIDE = `# SignWell Text Tags Guide
-
-Text tags allow you to embed signature field placeholders directly in your PDF content.
-SignWell scans the PDF text layer and converts these tags into interactive signature fields.
-
-## CRITICAL: PDF Generation Requirements
-
-**Text tags MUST be rendered as SELECTABLE/SEARCHABLE TEXT in the PDF.**
-
-SignWell parses the PDF's text layer to find tags. If tags are rendered as images, vector graphics,
-or flattened content, SignWell cannot detect them and "fields": [] will be returned.
-
-### Requirements for programmatic PDF generation (ReportLab, PDFKit, jsPDF, etc.):
-
-1. **Use text drawing methods** - e.g., \`canvas.drawString()\` in ReportLab, not image embedding
-2. **Use standard fonts** - Stick to built-in PDF fonts (Helvetica, Times, Courier) or properly embedded fonts
-3. **Use FlateDecode only** - Do NOT use ASCII85Decode or other exotic stream filters. Use only FlateDecode compression. SignWell may not parse PDFs with dual-filter encoding (e.g. ASCII85Decode + FlateDecode).
-4. **MANDATORY: Render text tags in WHITE (invisible) text** - You MUST set the text color to white before drawing any text tag. Tags rendered in black or any visible color will appear as ugly raw text to signers. Use white: \`setFillColorRGB(1, 1, 1)\` in ReportLab, \`doc.fillColor('white')\` in PDFKit, \`doc.setTextColor(255, 255, 255)\` in jsPDF. Always reset to black after drawing the tag. SignWell will still detect and parse white text \u2014 it reads the PDF text layer regardless of color.
-5. **Do NOT flatten or rasterize** - Avoid converting text to outlines or images
-
-### ReportLab-specific instructions:
-
-**REMINDER: ALL text tags MUST use white text color. Never draw tags in black.**
-
-\`\`\`python
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
-
-c = canvas.Canvas("output.pdf", pagesize=letter)
-# IMPORTANT: Set compression to FlateDecode only (no ASCII85)
-c._doc.encoding = "FlateDecode"
-# Draw visible content normally
-c.setFont("Helvetica", 12)
-c.setFillColorRGB(0, 0, 0)  # Black text for visible content
-c.drawString(72, 700, "Parent/Guardian Signature:")
-# Draw text tags in WHITE so they are invisible but parseable
-c.setFillColorRGB(1, 1, 1)  # White text for tags
-c.setFont("Helvetica", 10)
-c.drawString(230, 700, "{{signature:1:y}}")
-c.setFillColorRGB(0, 0, 0)  # Reset to black
-c.save()
-\`\`\`
-
-### Common mistakes that break text tags:
-- Rendering text as an image/screenshot
-- Using \`canvas.drawImage()\` instead of \`canvas.drawString()\`
-- Flattening the PDF or converting text to outlines
-- Using custom fonts that aren't properly embedded
-- PDF generation libraries that rasterize text
-- Using ASCII85Decode or dual-filter stream encoding (use FlateDecode only)
-
-Example PDF content (what the PDF text layer should contain):
-\`\`\`
-CONTRACT AGREEMENT
-
-Client Signature: {{signature:1:y}}
-Date: {{date:1:y}}
-
-Vendor Signature: {{signature:2:y}}
-Date: {{date:2:y}}
-\`\`\`
-
-**If you create a template/document with text_tags: true and the response shows "fields": [],
-it means the PDF does not contain valid text tags in the correct format.**
-
-## Syntax
-
-\`{{field_type:signer_number:required:label:prefill:api_id:width:height}}\`
-
-Parameters are positional and colon-separated. Omit trailing params if not needed.
-
-## Quick Examples
-
-- \`{{signature:1:y}}\` - Required signature, signer 1
-- \`{{text:1:y:Company Name}}\` - Required text field with label
-- \`{{date:1:y}}\` - Required date field
-- \`{{initial:1:y}}\` - Required initials
-- \`{{check:1:n}}\` - Optional checkbox
-- \`{{signature:2:y}}\` - Required signature, signer 2
-
-## Field Types
-
-| Type | Short | Description |
-|------|-------|-------------|
-| signature | s | Signature field |
-| initial | i | Initials field |
-| date | d | Date field |
-| text | - | Text input |
-| check | c | Checkbox |
-| autofill_name | af_n | Auto-filled name |
-| autofill_email | af_e | Auto-filled email |
-| autofill_date_signed | af_d_s | Auto-filled signing date |
-| autofill_company | af_c | Auto-filled company |
-
-## Parameters (Positional)
-
-1. **Field Type** - signature, text, date, check, initial, or autofill types
-2. **Signer Number** - 1, 2, 3... matches recipient \`id\` field (recipient with id: "1" = signer 1)
-3. **Required** - y or n
-4. **Label** - Field label (text/date only)
-5. **Prefill Value** - Default value
-6. **API ID** - Field identifier for API reference
-7. **Width** - Pixels (integer)
-8. **Height** - Pixels (integer)
-
-### Text Field Additional Options (positions 9-10)
-9. **Validation** - numbers, letters, email_address, us_phone_number, alphanumeric
-10. **Fixed Width** - y or n
-
-### Date Field Additional Options (positions 9-11)
-9. **Lock Sign Date** - y to auto-fill and lock
-10. **Date Format** - mm/dd/yyyy, dd/mm/yyyy, yyyy/mm/dd
-11. **Formula** - e.g., sent_date + 10 days
-
-## Important: Recipient ID Mapping
-
-When creating a document with \`document_create\`, the recipient's \`id\` field maps to the signer number in text tags:
-
-\`\`\`json
-{
-  "recipients": [
-    { "id": "1", "email": "alice@example.com" },
-    { "id": "2", "email": "bob@example.com" }
-  ]
-}
-\`\`\`
-
-- \`{{signature:1:y}}\` \u2192 Alice signs here
-- \`{{signature:2:y}}\` \u2192 Bob signs here
-
-## Complete Example
-
-\`\`\`
-NON-DISCLOSURE AGREEMENT
-
-This Agreement is entered into by {{autofill_name:1}} ("Disclosing Party")
-and {{autofill_name:2}} ("Receiving Party").
-
-1. The parties agree to the terms herein.
-
-DISCLOSING PARTY:
-Company: {{text:1:y:Company Name}}
-Signature: {{signature:1:y}}
-Date: {{date:1:y}}
-
-RECEIVING PARTY:
-Company: {{text:2:y:Company Name}}
-Signature: {{signature:2:y}}
-Date: {{date:2:y}}
-\`\`\`
-
-## Usage with document_create
-
-\`\`\`json
-{
-  "name": "NDA Agreement",
-  "text_tags": true,
-  "recipients": [
-    { "id": "1", "email": "alice@example.com", "first_name": "Alice" },
-    { "id": "2", "email": "bob@example.com", "first_name": "Bob" }
-  ],
-  "files": [
-    { "name": "nda.pdf", "file_base64": "..." }
-  ]
-}
-\`\`\`
-
-## Usage with template_create
-
-When creating templates with text tags, the placeholder \`id\` maps to the signer number:
-
-\`\`\`json
-{
-  "name": "NDA Template",
-  "text_tags": true,
-  "placeholders": [
-    { "id": "1", "name": "Disclosing Party" },
-    { "id": "2", "name": "Receiving Party" }
-  ],
-  "files": [
-    { "name": "nda.pdf", "file_base64": "..." }
-  ]
-}
-\`\`\`
-
-- \`{{signature:1:y}}\` \u2192 Assigned to placeholder with id "1" (Disclosing Party)
-- \`{{signature:2:y}}\` \u2192 Assigned to placeholder with id "2" (Receiving Party)
-
-When creating a document from this template using \`template_create_document\`, you assign actual recipients to the placeholders by their placeholder name:
-
-\`\`\`json
-{
-  "template_id": "template-uuid",
-  "recipients": [
-    { "id": "recipient_1", "placeholder_name": "Disclosing Party", "email": "alice@example.com", "name": "Alice" },
-    { "id": "recipient_2", "placeholder_name": "Receiving Party", "email": "bob@example.com", "name": "Bob" }
-  ]
-}
-\`\`\`
-`;
-function registerTextTagsResource(server) {
-  const readCallback = async (uri) => {
-    return {
-      contents: [
-        {
-          uri: uri.toString(),
-          mimeType: "text/markdown",
-          text: TEXT_TAGS_GUIDE
-        }
-      ]
-    };
-  };
-  if (typeof server.registerResource === "function") {
-    server.registerResource(
-      "text_tags_guide",
-      "signwell://text-tags-guide",
-      {
-        title: "SignWell Text Tags Guide",
-        description: "Documentation for embedding text tag placeholders in PDFs for SignWell signature fields."
-      },
-      readCallback
-    );
-    return;
-  }
-  const legacyServer = server;
-  if (typeof legacyServer.resource === "function") {
-    legacyServer.resource(
-      "text_tags_guide",
-      "signwell://text-tags-guide",
-      {
-        title: "SignWell Text Tags Guide",
-        description: "Documentation for embedding text tag placeholders in PDFs for SignWell signature fields."
-      },
-      readCallback
-    );
-  }
-}
-
 // src/setup/index.ts
 import { spawn } from "node:child_process";
 import fs6 from "node:fs";
@@ -2273,12 +2034,33 @@ var fileSchema = z3.object({
     "Plain text or Markdown content to convert to DOCX. When provided, the MCP server generates a DOCX file automatically. Use this instead of file_base64 to avoid UI freezing with large documents."
   )
 });
+var copiedContactSchema = z3.object({
+  email: z3.string().email({ message: "Copied contact email must be valid." }),
+  name: z3.string().optional().describe("Name of the CC recipient.")
+});
 var createDocumentSchema = z3.object({
   name: z3.string().min(1, { message: "Document name is required." }),
   recipients: z3.array(recipientSchema).min(1, { message: "At least one recipient is required." }),
   files: z3.array(fileSchema).min(1, { message: "Include at least one file." }),
-  message: z3.string().optional(),
-  text_tags: z3.boolean().optional()
+  subject: z3.string().optional().describe("Email subject line recipients will see."),
+  message: z3.string().optional().describe("Email message recipients will see."),
+  text_tags: z3.boolean().optional(),
+  draft: z3.boolean().optional().describe("If true, document is created as a draft and not sent. Default: false."),
+  apply_signing_order: z3.boolean().default(false).optional().describe(
+    "When true, recipients sign one at a time in the order of the recipients array."
+  ),
+  copied_contacts: z3.array(copiedContactSchema).optional().describe("CC recipients who receive the final signed document by email."),
+  expires_in: z3.number().int().min(1).max(365).optional().describe("Days before the signature request expires (max 365)."),
+  reminders: z3.boolean().default(true).optional().describe("Send signing reminders on day 3, 6, and 10."),
+  allow_decline: z3.boolean().default(true).optional().describe("Allow recipients to decline signing."),
+  allow_reassign: z3.boolean().default(true).optional().describe("Allow recipients to reassign to someone else."),
+  redirect_url: z3.string().url().optional().describe("URL to redirect after successful signing."),
+  decline_redirect_url: z3.string().url().optional().describe("URL to redirect if document is declined."),
+  metadata: z3.record(z3.string(), z3.string()).optional().describe("Key-value metadata (max 50 pairs, key max 40 chars, value max 500 chars)."),
+  embedded_signing: z3.boolean().default(false).optional().describe("Enable embedded signing."),
+  embedded_signing_notifications: z3.boolean().default(false).optional().describe("Send completion notifications when using embedded signing."),
+  custom_requester_name: z3.string().optional().describe("Custom requester name on communications."),
+  custom_requester_email: z3.string().email().optional().describe("Custom requester email on communications.")
 });
 var listDocumentsSchema = z3.object({
   status: z3.string().min(1).optional(),
@@ -2488,7 +2270,7 @@ The recipient "id" MUST match the number in text tags (id:"1" matches {{signatur
     completedPdfSchema,
     (input2, extra) => handleCompletedPdf(client, input2, extra)
   );
-  registerDocumentResource(server, client);
+  registerDocumentPrompt(server, client);
   return count;
 }
 async function handleCreateDocument(client, input2, extra) {
@@ -2683,79 +2465,31 @@ function toToolError(error, fallback) {
     error
   });
 }
-function registerDocumentResource(server, client) {
-  const readCallback = async (uri) => {
-    const documentId = extractDocumentId(uri);
-    if (!documentId) {
+function registerDocumentPrompt(server, client) {
+  server.registerPrompt(
+    "search_document",
+    {
+      title: "Fetch a SignWell document",
+      description: "Fetch SignWell document summary by id.",
+      argsSchema: { document_id: z3.string() }
+    },
+    async ({ document_id }) => {
+      const data = await client.get(`/documents/${document_id}`);
       return {
-        contents: [
+        messages: [
           {
-            uri: uri.toString(),
-            mimeType: "text/plain",
-            text: "Missing document id."
+            role: "user",
+            content: {
+              type: "text",
+              text: `${JSON.stringify(data, null, 2)}
+
+Summarize this document.`
+            }
           }
         ]
       };
     }
-    try {
-      const data = await client.get(`/documents/${documentId}`);
-      return {
-        contents: [
-          {
-            uri: uri.toString(),
-            mimeType: "application/json",
-            text: JSON.stringify(data, null, 2)
-          }
-        ]
-      };
-    } catch (error) {
-      const message = error instanceof SignWellError ? `Failed to fetch SignWell document (${error.type}): ${error.message}` : "Unexpected error fetching SignWell document.";
-      return {
-        contents: [
-          {
-            uri: uri.toString(),
-            mimeType: "text/plain",
-            text: message
-          }
-        ]
-      };
-    }
-  };
-  if (typeof server.registerResource === "function") {
-    server.registerResource(
-      "document_resource",
-      "document://{document_id}",
-      {
-        title: "SignWell document resource",
-        description: "Fetch SignWell document summary by id."
-      },
-      readCallback
-    );
-    return;
-  }
-  const legacyServer = server;
-  if (typeof legacyServer.resource === "function") {
-    legacyServer.resource(
-      "document_resource",
-      "document://{document_id}",
-      {
-        title: "SignWell document resource",
-        description: "Fetch SignWell document summary by id."
-      },
-      readCallback
-    );
-  }
-}
-function extractDocumentId(uri) {
-  const host = uri.hostname;
-  const path10 = uri.pathname.replace(/^\/+/, "");
-  if (host && host.length > 0) {
-    return path10 ? `${host}/${path10}` : host;
-  }
-  if (path10) {
-    return path10;
-  }
-  return null;
+  );
 }
 async function resolveFileInputs(files, extra) {
   return Promise.all(
@@ -3083,10 +2817,13 @@ var createFromTemplateSchema = z4.object({
   message: z4.string().max(4e3).optional(),
   subject: z4.string().optional(),
   metadata: z4.record(z4.string(), z4.string()).optional(),
-  draft: z4.boolean().default(true).optional(),
+  draft: z4.boolean().default(false).optional(),
   embedded_signing: z4.boolean().default(false).optional(),
   embedded_signing_notifications: z4.boolean().default(false).optional(),
   text_tags: z4.boolean().default(false).optional(),
+  apply_signing_order: z4.boolean().default(false).optional().describe(
+    "When true, recipients sign one at a time in the order of the recipients array."
+  ),
   custom_requester_name: z4.string().optional(),
   custom_requester_email: z4.string().email().optional(),
   redirect_url: z4.string().url().optional(),
@@ -3233,7 +2970,9 @@ COMMON ERRORS:
   );
   register(
     "template_create_document",
-    `Create a document from a template (draft by default).
+    `Create and send a document from a template. Templates are pre-configured and ready to send, so this tool sends the document for signing by default.
+
+IMPORTANT: When a user asks to "send a template" or "send a document from a template", the document will be sent immediately for signing. Set draft: true ONLY if the user explicitly asks to create a draft or review before sending.
 
 REQUIRED:
 - template_id: The template ID to create the document from
@@ -3252,13 +2991,11 @@ Example:
     "email": "client@example.com",
     "name": "John Doe"
   }]
-}
-
-Set draft: false to send immediately for signing.`,
+}`,
     createFromTemplateSchema,
     (input2, extra) => handleCreateDocumentFromTemplate(client, input2, extra)
   );
-  registerTemplateResource(server, client);
+  registerTemplatePrompt(server, client);
   return count;
 }
 async function handleTemplateCreate(client, input2, extra) {
@@ -3291,7 +3028,7 @@ async function handleTemplateCreate(client, input2, extra) {
     if (input2.text_tags && hasFields) {
     } else if (input2.text_tags && !hasFields) {
       warnings.push(
-        "NOTE: text_tags was enabled. SignWell may still be processing the tags. Open the template in the SignWell editor to verify fields were placed correctly. If fields are missing, ensure the PDF contains valid selectable text tags (e.g. {{signature:1:y}}) and the signer numbers match placeholder ids. See signwell://text-tags-guide for syntax details."
+        "NOTE: text_tags was enabled. SignWell may still be processing the tags. Open the template in the SignWell editor to verify fields were placed correctly. If fields are missing, ensure the PDF contains valid selectable text tags (e.g. {{signature:1:y}}) and the signer numbers match placeholder ids. See the text tags documentation for syntax details."
       );
     } else if (!hasFields) {
       warnings.push(
@@ -3378,17 +3115,18 @@ async function handleCreateDocumentFromTemplate(client, input2, extra) {
       const { send_email, send_email_delay, ...recipientRest } = recipient;
       return recipientRest;
     });
+    const draft = input2.draft ?? false;
     const payload = {
       template_id,
       ...rest,
       recipients: processedRecipients,
       ...resolvedFiles && { files: resolvedFiles },
-      draft: input2.draft ?? true
+      draft
     };
     const data = await client.post("/document_templates/documents", payload);
     return successResponse({
       type: "template_create_document",
-      message: input2.draft === false ? "Document created and sent." : "Document draft created from template.",
+      message: draft ? "Document draft created from template. It has NOT been sent yet. Use document_send_draft to send it when ready." : "Document has been sent for signing. Recipients will receive an email to sign the document.",
       data
     });
   } catch (error) {
@@ -3475,79 +3213,31 @@ async function fetchResourceAsBase643(resourceUri, extra) {
   }
   throw new Error(`Resource ${resourceUri} must include blob or text content.`);
 }
-function registerTemplateResource(server, client) {
-  const readCallback = async (uri) => {
-    const templateId = extractTemplateId(uri);
-    if (!templateId) {
+function registerTemplatePrompt(server, client) {
+  server.registerPrompt(
+    "search_template",
+    {
+      title: "Fetch a SignWell template",
+      description: "Fetch SignWell template summary by id.",
+      argsSchema: { template_id: z4.string() }
+    },
+    async ({ template_id }) => {
+      const data = await client.get(`/document_templates/${template_id}`);
       return {
-        contents: [
+        messages: [
           {
-            uri: uri.toString(),
-            mimeType: "text/plain",
-            text: "Missing template id."
+            role: "user",
+            content: {
+              type: "text",
+              text: `${JSON.stringify(data, null, 2)}
+
+Summarize this template.`
+            }
           }
         ]
       };
     }
-    try {
-      const data = await client.get(`/document_templates/${templateId}`);
-      return {
-        contents: [
-          {
-            uri: uri.toString(),
-            mimeType: "application/json",
-            text: JSON.stringify(data, null, 2)
-          }
-        ]
-      };
-    } catch (error) {
-      const message = error instanceof SignWellError ? `Failed to fetch SignWell template (${error.type}): ${error.message}` : "Unexpected error fetching SignWell template.";
-      return {
-        contents: [
-          {
-            uri: uri.toString(),
-            mimeType: "text/plain",
-            text: message
-          }
-        ]
-      };
-    }
-  };
-  if (typeof server.registerResource === "function") {
-    server.registerResource(
-      "template_resource",
-      "template://{template_id}",
-      {
-        title: "SignWell template resource",
-        description: "Fetch SignWell template summary by id."
-      },
-      readCallback
-    );
-    return;
-  }
-  const legacyServer = server;
-  if (typeof legacyServer.resource === "function") {
-    legacyServer.resource(
-      "template_resource",
-      "template://{template_id}",
-      {
-        title: "SignWell template resource",
-        description: "Fetch SignWell template summary by id."
-      },
-      readCallback
-    );
-  }
-}
-function extractTemplateId(uri) {
-  const host = uri.hostname;
-  const path10 = uri.pathname.replace(/^\/+/, "");
-  if (host && host.length > 0) {
-    return path10 ? `${host}/${path10}` : host;
-  }
-  if (path10) {
-    return path10;
-  }
-  return null;
+  );
 }
 
 // src/tools/validate.ts
@@ -3852,7 +3542,6 @@ function registerTools(server, client) {
   toolCount += registerValidateTools(server);
   toolCount += registerDocumentTools(server, client);
   toolCount += registerTemplateTools(server, client);
-  registerTextTagsResource(server);
   return toolCount;
 }
 function installSignalHandlers(server, transport) {
