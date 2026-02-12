@@ -634,7 +634,7 @@ function resolveNodeBin() {
 function buildPosixLaunch(envFilePath, entryPoint, _runner, isLocalDev) {
   const envFile = shellQuote(envFilePath);
   const nodeBin = shellQuote(resolveNodeBin());
-  const runCmd = isLocalDev ? `${nodeBin} ${shellQuote(entryPoint)}` : `${nodeBin} ${shellQuote(resolveNpxBin())} -y signwell-mcp`;
+  const runCmd = isLocalDev ? `${nodeBin} ${shellQuote(entryPoint)}` : `${nodeBin} ${shellQuote(resolveNpxBin())} -y @signwell/mcp`;
   return `set -a && . ${envFile} && set +a && ${runCmd}`;
 }
 function buildPowerShellLaunch(envFilePath, entryPoint, _runner, isLocalDev) {
@@ -655,7 +655,7 @@ function buildPowerShellLaunch(envFilePath, entryPoint, _runner, isLocalDev) {
     "  }",
     "}"
   ];
-  const runCmd = isLocalDev ? `${nodeBin} ${psQuote(entryPoint)}` : `${nodeBin} ${psQuote(resolveNpxBin())} -y signwell-mcp`;
+  const runCmd = isLocalDev ? `${nodeBin} ${psQuote(entryPoint)}` : `${nodeBin} ${psQuote(resolveNpxBin())} -y @signwell/mcp`;
   scriptParts.push(runCmd);
   return scriptParts.join("; ");
 }
@@ -801,7 +801,7 @@ ${envNotes}` : snippetLines,
 
 // src/setup/index.ts
 var HELP_TEXT = `Usage:
-  signwell-mcp setup [options]        (installed via npm or npx)
+  npx @signwell/mcp setup [options]   (installed via npm or npx)
   node build/index.js setup [options] (from a local clone)
 
 Options:
@@ -3472,8 +3472,8 @@ var HELP_TEXT2 = `
 SignWell MCP Server v${VERSION}
 
 Usage:
-  signwell-mcp [options]
-  signwell-mcp setup [mode]
+  npx @signwell/mcp [options]
+  npx @signwell/mcp setup [mode]
   (from source) node build/index.js [options]
 
 Options:

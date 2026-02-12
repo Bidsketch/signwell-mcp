@@ -37,7 +37,7 @@ Model Context Protocol server that orchestrates SignWell's e-signature workflows
    - Prints JSON snippets for all clients plus a generic/manual flow in case you need to double-check or apply them elsewhere.
    - Use `--print` (or `-p`) to preview outputs without writing to disk, and `--yes --api-key=...` for non-interactive runs (CI, devcontainers, etc.).
    - Pass `--clients=claude-desktop,cursor` to limit which MCP clients the wizard configures; omit for "all". Use `--timeout=<ms>` only if you need a non-default HTTP timeout.
-   - After bundling (`npm run build`) and publishing the package, end users can invoke the same wizard with `npx signwell-mcp setup`. Installing globally also enables invoking `signwell-mcp setup` directly.
+   - After bundling (`npm run build`) and publishing the package, end users can invoke the same wizard with `npx @signwell/mcp setup`. Installing globally also enables invoking `signwell-mcp setup` directly.
 
 ### Manual exports
 
@@ -55,13 +55,13 @@ Once the package is published to npm (GitHub: `Bidsketch/signwell-mcp`):
 - Run the setup wizard without installing anything globally:
 
   ```bash
-  npx signwell-mcp setup
+  npx @signwell/mcp setup
   ```
 
 - Install globally if you prefer a persistent binary:
 
   ```bash
-  npm install -g signwell-mcp
+  npm install -g @signwell/mcp
   signwell-mcp setup
   ```
 
@@ -71,7 +71,7 @@ After configuration, start the MCP server via `signwell-mcp` (requires Node.js v
 
 1. Install dependencies: `npm install`
 2. Bundle the CLI entrypoint (required for MCP client configs): `npm run build`
-3. Configure credentials: `node build/index.js setup` (or `npx signwell-mcp setup` once published)
+3. Configure credentials: `node build/index.js setup` (or `npx @signwell/mcp setup` once published)
 4. Start the MCP server locally: `npm start` (runs `node build/index.js`)
 5. Open another terminal to run tests and linters before committing:
 
@@ -97,7 +97,7 @@ After configuration, start the MCP server via `signwell-mcp` (requires Node.js v
   - `node build/index.js --help` prints usage and env expectations.
   - `node build/index.js --version` prints the current build.
   - `node build/index.js setup` launches the setup wizard described above when working from source.
-  - Once the package is bundled/published, `npx signwell-mcp setup` runs the wizard and `SIGNWELL_API_KEY=... npx signwell-mcp` starts the server via the packaged binary (global installs can call `signwell-mcp ...` directly).
+  - Once the package is bundled/published, `npx @signwell/mcp setup` runs the wizard and `SIGNWELL_API_KEY=... npx @signwell/mcp` starts the server via the packaged binary (global installs can call `signwell-mcp ...` directly).
 
 ### MCP Inspector
 

@@ -11,6 +11,6 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "signwell-mcp": "file:../signwell-mcp-0.1.0.tgz"
+    "@signwell/mcp": "file:../signwell-mcp-0.1.0.tgz"
   }
 }

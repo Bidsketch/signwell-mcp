@@ -23,8 +23,8 @@ const HELP_TEXT = `
 SignWell MCP Server v${VERSION}
 
 Usage:
-  signwell-mcp [options]
-  signwell-mcp setup [mode]
+  npx @signwell/mcp [options]
+  npx @signwell/mcp setup [mode]
   (from source) node build/index.js [options]
 
 Options:

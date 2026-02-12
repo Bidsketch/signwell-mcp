@@ -23,7 +23,7 @@ import { buildManualSnippet } from "./manual.ts";
 import type { ClientWriteResult, Runner, SetupRenderContext } from "./types.ts";
 
 const HELP_TEXT = `Usage:
-  signwell-mcp setup [options]        (installed via npm or npx)
+  npx @signwell/mcp setup [options]   (installed via npm or npx)
   node build/index.js setup [options] (from a local clone)
 
 Options:

@@ -1,5 +1,5 @@
 {
-  "name": "signwell-mcp",
+  "name": "@signwell/mcp",
   "version": "0.1.0",
   "description": "Model Context Protocol server for SignWell workflows.",
   "type": "module",

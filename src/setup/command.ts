@@ -32,7 +32,7 @@ export function buildPosixLaunch(
   const nodeBin = shellQuote(resolveNodeBin());
   const runCmd = isLocalDev
     ? `${nodeBin} ${shellQuote(entryPoint)}`
-    : `${nodeBin} ${shellQuote(resolveNpxBin())} -y signwell-mcp`;
+    : `${nodeBin} ${shellQuote(resolveNpxBin())} -y @signwell/mcp`;
   return `set -a && . ${envFile} && set +a && ${runCmd}`;
 }
 
@@ -61,7 +61,7 @@ export function buildPowerShellLaunch(
   ];
   const runCmd = isLocalDev
     ? `${nodeBin} ${psQuote(entryPoint)}`
-    : `${nodeBin} ${psQuote(resolveNpxBin())} -y signwell-mcp`;
+    : `${nodeBin} ${psQuote(resolveNpxBin())} -y @signwell/mcp`;
   scriptParts.push(runCmd);
   return scriptParts.join("; ");
 }
