@@ -9,7 +9,7 @@
   "author": "Bidsketch, Inc.",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Bidsketch/signwell-mcp.git"
+    "url": "git+https://github.com/Bidsketch/signwell-mcp.git"
   },
   "bugs": {
     "url": "https://github.com/Bidsketch/signwell-mcp/issues"
