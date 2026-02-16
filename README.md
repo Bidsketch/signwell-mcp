@@ -107,28 +107,6 @@ Use the MCP inspector to exercise tools locally:
 npx @modelcontextprotocol/inspector node build/index.js
 ```
 
-### Example: `ping`
-
-````markdown
-```
-$ SIGNWELL_API_KEY=dummy node build/index.js
-[SignWell MCP] Ready v0.1.0 (15 tools, stdio transport).
-```
-
-Inspector call:
-
-```json
-{
-  "ok": true,
-  "type": "ping",
-  "message": "pong",
-  "data": {
-    "timestamp": "2026-01-21T18:30:00.000Z"
-  }
-}
-```
-````
-
 ## Tests
 
 Run the quality gates in order:
@@ -211,6 +189,44 @@ Sample MCP inspector session (sanitized IDs):
      }
    }
    ```
+
+## Privacy Policy
+
+This section describes the data practices of the SignWell MCP Server.
+
+### Data Collection
+
+- The MCP server itself does **not** collect, transmit, or store any personal data or usage analytics.
+- Your SignWell API key is stored locally on your machine with restrictive file permissions (`0600`) in platform-specific secure locations:
+  - **macOS:** `~/Library/Application Support/SignWell/MCP/env`
+  - **Linux:** `~/.config/signwell-mcp/env`
+  - **Windows:** `%APPDATA%/SignWell/MCP/env`
+
+### Usage & Storage
+
+- Files provided via `file_store` are held **temporarily in memory** with a 60-minute TTL and are cleared automatically.
+- All in-memory file data is also cleared on server restart.
+- No persistent data storage exists beyond the credential file created during setup.
+
+### Third-Party Sharing
+
+- The MCP server does **not** share data with any third parties.
+- All API communication goes directly between your machine and SignWell's servers (`https://www.signwell.com/api/v1`).
+
+### Telemetry & Analytics
+
+- The server does **not** collect, transmit, or store usage analytics or telemetry of any kind.
+
+### Data Retention
+
+- In-memory file storage is cleared on server restart or after the 60-minute TTL expires.
+- No persistent data is retained beyond the local credential configuration file.
+
+### Contact
+
+For privacy inquiries, contact [support@signwell.com](mailto:support@signwell.com) or open an issue at [github.com/Bidsketch/signwell-mcp/issues](https://github.com/Bidsketch/signwell-mcp/issues).
+
+See also the hosted privacy policy at [https://www.signwell.com/privacy/](https://www.signwell.com/privacy/).
 
 ## Resources
 
