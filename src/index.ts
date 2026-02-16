@@ -13,7 +13,6 @@ import { registerDocumentTools } from "./tools/documents.ts";
 import { registerFileTools } from "./tools/files.ts";
 import { registerTemplateTools } from "./tools/templates.ts";
 import { registerValidateTools } from "./tools/validate.ts";
-import { registerHealthTools } from "./tools/ping.ts";
 
 // Injected at build time by esbuild; falls back to "dev" during development
 declare const __PKG_VERSION__: string | undefined;
@@ -99,7 +98,6 @@ async function startServer(): Promise<void> {
 
 function registerTools(server: McpServer, client: SignWellClient): number {
   let toolCount = 0;
-  toolCount += registerHealthTools(server);
   toolCount += registerFileTools(server);
   toolCount += registerValidateTools(server);
   toolCount += registerDocumentTools(server, client);

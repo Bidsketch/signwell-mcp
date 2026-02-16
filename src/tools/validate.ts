@@ -53,6 +53,7 @@ Returns:
 - Signer numbers referenced
 - Recommendations for fixing issues`,
       inputSchema: validateTextTagsSchema,
+      annotations: { readOnlyHint: true },
     },
     async (input, extra) =>
       handleValidateTextTags(input as ValidateTextTagsInput, extra as ToolExtra),

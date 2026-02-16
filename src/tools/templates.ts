@@ -562,6 +562,7 @@ export function registerTemplateTools(server: McpServer, client: SignWellClient)
     description: string,
     schema: Schema,
     handler: (input: z.infer<Schema>, extra: ToolExtra) => Promise<CallToolResult>,
+    annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean },
   ) => {
     // Debug: Log the JSON schema being registered
     if (isDebugEnabled() && typeof schema.toJSONSchema === "function") {
@@ -607,6 +608,7 @@ export function registerTemplateTools(server: McpServer, client: SignWellClient)
       {
         description,
         inputSchema: schema,
+        annotations,
       },
       toolHandler,
     );
@@ -683,6 +685,7 @@ COMMON ERRORS:
 - "fields": [] in response = PDF doesn't contain valid text tags, or text_tags wasn't set to true`,
     createTemplateSchema,
     (input, extra) => handleTemplateCreate(client, input, extra),
+    { readOnlyHint: false, destructiveHint: false },
   );
 
   register(
@@ -690,6 +693,7 @@ COMMON ERRORS:
     "Update an existing SignWell template. Only provide fields you want to change.",
     updateTemplateSchema,
     (input, extra) => handleTemplateUpdate(client, input, extra),
+    { readOnlyHint: false, destructiveHint: false },
   );
 
   register(
@@ -697,6 +701,7 @@ COMMON ERRORS:
     "Fetch an individual SignWell template by ID.",
     getTemplateSchema,
     (input, _extra) => handleTemplateGet(client, input),
+    { readOnlyHint: true },
   );
 
   register(
@@ -704,6 +709,7 @@ COMMON ERRORS:
     "List SignWell templates with pagination.",
     listTemplatesSchema,
     (input, _extra) => handleTemplateList(client, input),
+    { readOnlyHint: true },
   );
 
   register(
@@ -711,6 +717,7 @@ COMMON ERRORS:
     "Delete a SignWell template.",
     deleteTemplateSchema,
     (input, _extra) => handleTemplateDelete(client, input),
+    { destructiveHint: true },
   );
 
   register(
@@ -739,6 +746,7 @@ Example:
 }`,
     createFromTemplateSchema,
     (input, extra) => handleCreateDocumentFromTemplate(client, input, extra),
+    { readOnlyHint: false, destructiveHint: false },
   );
 
   registerTemplatePrompt(server, client);
