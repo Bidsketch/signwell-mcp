@@ -1,32 +1,37 @@
 {
-  "manifest_version": 0.2,
+  "manifest_version": "0.3",
   "name": "signwell",
   "display_name": "SignWell",
   "description": "Model Context Protocol server that orchestrates SignWell's e-signature workflows — create, send, track, and manage documents and templates.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": {
     "name": "Bidsketch, Inc.",
     "url": "https://www.signwell.com"
   },
-  "repository": "https://github.com/Bidsketch/signwell-mcp",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Bidsketch/signwell-mcp"
+  },
   "homepage": "https://github.com/Bidsketch/signwell-mcp#readme",
   "license": "MIT",
-  "runtime": "node",
-  "transport": "stdio",
-  "command": "npx",
-  "args": ["signwell-mcp"],
-  "env": {
-    "SIGNWELL_API_KEY": {
+  "server": {
+    "type": "node",
+    "entry_point": "build/index.js",
+    "mcp_config": {
+      "command": "npx",
+      "args": ["-y", "@signwell/mcp"],
+      "env": {
+        "SIGNWELL_API_KEY": "${user_config.api_key}"
+      }
+    }
+  },
+  "user_config": {
+    "api_key": {
+      "title": "SignWell API Key",
       "description": "SignWell API key with document access.",
-      "required": true
-    },
-    "SIGNWELL_API_BASE_URL": {
-      "description": "Override the SignWell API base URL (default: https://www.signwell.com/api/v1).",
-      "required": false
-    },
-    "SIGNWELL_API_TIMEOUT_MS": {
-      "description": "HTTP timeout in milliseconds (default: 90000).",
-      "required": false
+      "type": "string",
+      "required": true,
+      "sensitive": true
     }
   },
   "privacy_policies": [
