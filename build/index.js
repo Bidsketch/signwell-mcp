@@ -1829,7 +1829,8 @@ HOW TO PROVIDE THE FILE (in order of preference):
 CHAT ATTACHMENTS: When a user uploads/attaches a file in the chat, DO NOT use resource_uri \u2014 those are sandboxed and inaccessible. Instead, call file_store with NO arguments to open the native file picker.
 
 CLAUDE-GENERATED FILES: If YOU created the file content (e.g. generated a PDF), do NOT use file_store. Pass file_base64 directly to document_create instead.`,
-      inputSchema: selectFileSchema
+      inputSchema: selectFileSchema,
+      annotations: { readOnlyHint: false, destructiveHint: false }
     },
     async (input2, extra) => handleFileStore(input2, extra)
   );
@@ -2162,7 +2163,7 @@ function attachEditorLink(data) {
 }
 function registerDocumentTools(server, client) {
   let count = 0;
-  const register = (name, description, schema, handler) => {
+  const register = (name, description, schema, handler, annotations) => {
     const toolHandler = (async (input2, extra) => {
       const validated = schema.parse(input2);
       return handler(validated, extra);
@@ -2171,7 +2172,8 @@ function registerDocumentTools(server, client) {
       name,
       {
         description,
-        inputSchema: schema
+        inputSchema: schema,
+        annotations
       },
       toolHandler
     );
@@ -2238,37 +2240,43 @@ EXAMPLE (pdf with text tags):
 TEXT TAGS (optional): Set text_tags: true only if the document already contains signature placeholders like {{signature:1:y}}.
 The recipient "id" MUST match the number in text tags (id:"1" matches {{signature:1:y}}).`,
     createDocumentSchema,
-    (input2, extra) => handleCreateDocument(client, input2, extra)
+    (input2, extra) => handleCreateDocument(client, input2, extra),
+    { readOnlyHint: false, destructiveHint: false }
   );
   register(
     "document_list",
     "List SignWell documents with optional filtering (status, archived, search).",
     listDocumentsSchema,
-    (input2, extra) => handleListDocuments(client, input2, extra)
+    (input2, extra) => handleListDocuments(client, input2, extra),
+    { readOnlyHint: true }
   );
   register(
     "document_get",
     "Fetch the latest status for a SignWell document.",
     getDocumentSchema,
-    (input2, extra) => handleGetDocument(client, input2, extra)
+    (input2, extra) => handleGetDocument(client, input2, extra),
+    { readOnlyHint: true }
   );
   register(
     "document_send_draft",
     "Send a previously created draft document (requires confirm_send).",
     sendDraftSchema,
-    (input2, extra) => handleSendDraft(client, input2, extra)
+    (input2, extra) => handleSendDraft(client, input2, extra),
+    { readOnlyHint: false, destructiveHint: false }
   );
   register(
     "document_send_reminder",
     "Send a reminder email for a document (optionally to a specific recipient).",
     reminderSchema,
-    (input2, extra) => handleSendReminder(client, input2, extra)
+    (input2, extra) => handleSendReminder(client, input2, extra),
+    { readOnlyHint: false, destructiveHint: false }
   );
   register(
     "document_completed_pdf",
     "Fetch the completed PDF. Use mode: 'base64' to get content for displaying in an artifact or chat (embed as data:application/pdf;base64,{pdf_base64}). Default 'url' mode returns a shareable link.",
     completedPdfSchema,
-    (input2, extra) => handleCompletedPdf(client, input2, extra)
+    (input2, extra) => handleCompletedPdf(client, input2, extra),
+    { readOnlyHint: false, destructiveHint: false }
   );
   registerDocumentPrompt(server, client);
   return count;
@@ -2833,7 +2841,7 @@ var createFromTemplateSchema = z4.object({
 });
 function registerTemplateTools(server, client) {
   let count = 0;
-  const register = (name, description, schema, handler) => {
+  const register = (name, description, schema, handler, annotations) => {
     if (isDebugEnabled() && typeof schema.toJSONSchema === "function") {
       debugLog(`Registering tool "${name}" with schema:`, schema.toJSONSchema());
     }
@@ -2867,7 +2875,8 @@ Use "content_text" for generated content (auto-converts to DOCX). For existing f
       name,
       {
         description,
-        inputSchema: schema
+        inputSchema: schema,
+        annotations
       },
       toolHandler
     );
@@ -2942,31 +2951,36 @@ COMMON ERRORS:
 - Empty arguments {} = You forgot to include files and placeholders arrays
 - "fields": [] in response = PDF doesn't contain valid text tags, or text_tags wasn't set to true`,
     createTemplateSchema,
-    (input2, extra) => handleTemplateCreate(client, input2, extra)
+    (input2, extra) => handleTemplateCreate(client, input2, extra),
+    { readOnlyHint: false, destructiveHint: false }
   );
   register(
     "template_update",
     "Update an existing SignWell template. Only provide fields you want to change.",
     updateTemplateSchema,
-    (input2, extra) => handleTemplateUpdate(client, input2, extra)
+    (input2, extra) => handleTemplateUpdate(client, input2, extra),
+    { readOnlyHint: false, destructiveHint: false }
   );
   register(
     "template_get",
     "Fetch an individual SignWell template by ID.",
     getTemplateSchema,
-    (input2, _extra) => handleTemplateGet(client, input2)
+    (input2, _extra) => handleTemplateGet(client, input2),
+    { readOnlyHint: true }
   );
   register(
     "template_list",
     "List SignWell templates with pagination.",
     listTemplatesSchema,
-    (input2, _extra) => handleTemplateList(client, input2)
+    (input2, _extra) => handleTemplateList(client, input2),
+    { readOnlyHint: true }
   );
   register(
     "template_delete",
     "Delete a SignWell template.",
     deleteTemplateSchema,
-    (input2, _extra) => handleTemplateDelete(client, input2)
+    (input2, _extra) => handleTemplateDelete(client, input2),
+    { destructiveHint: true }
   );
   register(
     "template_create_document",
@@ -2993,7 +3007,8 @@ Example:
   }]
 }`,
     createFromTemplateSchema,
-    (input2, extra) => handleCreateDocumentFromTemplate(client, input2, extra)
+    (input2, extra) => handleCreateDocumentFromTemplate(client, input2, extra),
+    { readOnlyHint: false, destructiveHint: false }
   );
   registerTemplatePrompt(server, client);
   return count;
@@ -3272,7 +3287,8 @@ Returns:
 - List of malformed tags (if any)
 - Signer numbers referenced
 - Recommendations for fixing issues`,
-      inputSchema: validateTextTagsSchema
+      inputSchema: validateTextTagsSchema,
+      annotations: { readOnlyHint: true }
     },
     async (input2, extra) => handleValidateTextTags(input2, extra)
   );
@@ -3430,43 +3446,8 @@ async function extractPdfText(data) {
   }
 }
 
-// src/tools/ping.ts
-import { z as z6 } from "zod";
-var pingInputSchema = z6.object({
-  message: z6.string().trim().min(1, "Message must include at least one character.").optional().describe("Optional text to echo back in the pong response.")
-});
-async function handlePing(input2) {
-  try {
-    const normalizedMessage = input2.message ?? "pong";
-    return successResponse({
-      type: "ping",
-      message: normalizedMessage,
-      data: {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString()
-      }
-    });
-  } catch (error) {
-    return errorResponse({
-      type: "internal",
-      message: "Unable to complete ping request.",
-      error
-    });
-  }
-}
-function registerHealthTools(server) {
-  server.registerTool(
-    "ping",
-    {
-      description: "Verify the SignWell MCP server is up and responding.",
-      inputSchema: pingInputSchema
-    },
-    async (input2) => handlePing(input2)
-  );
-  return 1;
-}
-
 // src/index.ts
-var VERSION = true ? "0.1.0" : "dev";
+var VERSION = true ? "0.3.1" : "dev";
 var SERVER_NAME = "signwell";
 var HELP_TEXT2 = `
 SignWell MCP Server v${VERSION}
@@ -3537,7 +3518,6 @@ async function startServer() {
 }
 function registerTools(server, client) {
   let toolCount = 0;
-  toolCount += registerHealthTools(server);
   toolCount += registerFileTools(server);
   toolCount += registerValidateTools(server);
   toolCount += registerDocumentTools(server, client);
