@@ -6,7 +6,7 @@
   "main": "build/index.js",
   "private": false,
   "license": "MIT",
-  "author": "Bidsketch, Inc.",
+  "author": "SignWell",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Bidsketch/signwell-mcp.git"
