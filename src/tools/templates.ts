@@ -797,6 +797,7 @@ async function handleTemplateCreate(
       draft: input.draft ?? true,
     };
     const data = await client.post<TemplateResponse>("/document_templates", payload);
+    (data as Record<string, unknown>).template_builder_url = `https://www.signwell.com/app/template_builder/${data.id}`;
 
     const warnings: string[] = [];
     const hasFields =
@@ -817,7 +818,7 @@ async function handleTemplateCreate(
     } else if (!hasFields) {
       warnings.push(
         "WARNING: Template has no signature fields. You must either: " +
-          "(1) Add fields manually via the SignWell web editor at the embedded_edit_url, or " +
+          "(1) Add fields manually via the SignWell web editor at the template_builder_url, or " +
           "(2) Use text_tags: true with a PDF containing text tag placeholders like {{signature:1:y}}.",
       );
     }

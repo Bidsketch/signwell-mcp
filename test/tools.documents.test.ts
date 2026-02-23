@@ -139,7 +139,7 @@ describe("registerDocumentTools", () => {
     expect(payload.ok).toBe(true);
     expect(payload.data).toHaveProperty(
       "editor_url",
-      "https://www.signwell.com/edit/document/doc-123/",
+      "https://www.signwell.com/app/builder/doc-123",
     );
     expect(payload.message).toContain("editor link");
     expect(payload.warnings?.[0]).toContain("editor_url");

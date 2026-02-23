@@ -569,6 +569,6 @@ describe("registerTemplateTools", () => {
     expect(payload.ok).toBe(true);
     expect(payload.warnings).toBeDefined();
     expect((payload.warnings as string[])[0]).toContain("no signature fields");
-    expect((payload.warnings as string[])[0]).toContain("embedded_edit_url");
+    expect((payload.warnings as string[])[0]).toContain("template_builder_url");
   });
 });

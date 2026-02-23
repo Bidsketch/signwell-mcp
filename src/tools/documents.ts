@@ -202,19 +202,9 @@ type ToolExtra = {
 };
 
 function deriveEditorUrl(data: Record<string, unknown>): string | undefined {
-  const embedded = data.embedded_edit_url;
-  if (typeof embedded === "string" && embedded.length > 0) {
-    return embedded;
-  }
-
-  const editUrl = data.edit_url;
-  if (typeof editUrl === "string" && editUrl.length > 0) {
-    return editUrl;
-  }
-
   const id = data.id;
   if (typeof id === "string" && id.length > 0) {
-    return `https://www.signwell.com/edit/document/${id}/`;
+    return `https://www.signwell.com/app/builder/${id}`;
   }
 
   return undefined;

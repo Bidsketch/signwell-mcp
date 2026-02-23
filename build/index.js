@@ -2133,17 +2133,9 @@ function validateFileExtension(name, fileUrl) {
 }
 var COMPLETED_PDF_WARNING_THRESHOLD_BYTES = 5 * 1024 * 1024;
 function deriveEditorUrl(data) {
-  const embedded = data.embedded_edit_url;
-  if (typeof embedded === "string" && embedded.length > 0) {
-    return embedded;
-  }
-  const editUrl = data.edit_url;
-  if (typeof editUrl === "string" && editUrl.length > 0) {
-    return editUrl;
-  }
   const id = data.id;
   if (typeof id === "string" && id.length > 0) {
-    return `https://www.signwell.com/edit/document/${id}/`;
+    return `https://www.signwell.com/app/builder/${id}`;
   }
   return void 0;
 }
@@ -3038,6 +3030,7 @@ async function handleTemplateCreate(client, input2, extra) {
       draft: input2.draft ?? true
     };
     const data = await client.post("/document_templates", payload);
+    data.template_builder_url = `https://www.signwell.com/app/template_builder/${data.id}`;
     const warnings = [];
     const hasFields = data.fields && data.fields.length > 0 && data.fields.some((f) => f.length > 0);
     if (input2.text_tags && hasFields) {
@@ -3047,7 +3040,7 @@ async function handleTemplateCreate(client, input2, extra) {
       );
     } else if (!hasFields) {
       warnings.push(
-        "WARNING: Template has no signature fields. You must either: (1) Add fields manually via the SignWell web editor at the embedded_edit_url, or (2) Use text_tags: true with a PDF containing text tag placeholders like {{signature:1:y}}."
+        "WARNING: Template has no signature fields. You must either: (1) Add fields manually via the SignWell web editor at the template_builder_url, or (2) Use text_tags: true with a PDF containing text tag placeholders like {{signature:1:y}}."
       );
     }
     return successResponse({
@@ -3447,7 +3440,7 @@ async function extractPdfText(data) {
 }
 
 // src/index.ts
-var VERSION = true ? "0.3.1" : "dev";
+var VERSION = true ? "0.3.2" : "dev";
 var SERVER_NAME = "signwell";
 var HELP_TEXT2 = `
 SignWell MCP Server v${VERSION}
