@@ -233,7 +233,7 @@ export function registerDocumentTools(server: McpServer, client: SignWellClient)
     description: string,
     schema: Schema,
     handler: (input: z.infer<Schema>, extra: ToolExtra) => Promise<CallToolResult>,
-    annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean },
+    annotations?: { title?: string; readOnlyHint?: boolean; destructiveHint?: boolean },
   ) => {
     const toolHandler = (async (input: unknown, extra: ToolExtra) => {
       const validated = schema.parse(input);
@@ -314,7 +314,7 @@ TEXT TAGS (optional): Set text_tags: true only if the document already contains 
 The recipient "id" MUST match the number in text tags (id:"1" matches {{signature:1:y}}).`,
     createDocumentSchema,
     (input, extra) => handleCreateDocument(client, input, extra),
-    { readOnlyHint: false, destructiveHint: false },
+    { title: "Create Document", readOnlyHint: false, destructiveHint: false },
   );
 
   register(
@@ -322,7 +322,7 @@ The recipient "id" MUST match the number in text tags (id:"1" matches {{signatur
     "List SignWell documents with optional filtering (status, archived, search).",
     listDocumentsSchema,
     (input, extra) => handleListDocuments(client, input, extra),
-    { readOnlyHint: true },
+    { title: "List Documents", readOnlyHint: true },
   );
 
   register(
@@ -330,7 +330,7 @@ The recipient "id" MUST match the number in text tags (id:"1" matches {{signatur
     "Fetch the latest status for a SignWell document.",
     getDocumentSchema,
     (input, extra) => handleGetDocument(client, input, extra),
-    { readOnlyHint: true },
+    { title: "Get Document", readOnlyHint: true },
   );
 
   register(
@@ -338,7 +338,7 @@ The recipient "id" MUST match the number in text tags (id:"1" matches {{signatur
     "Send a previously created draft document (requires confirm_send).",
     sendDraftSchema,
     (input, extra) => handleSendDraft(client, input, extra),
-    { readOnlyHint: false, destructiveHint: false },
+    { title: "Send Draft", readOnlyHint: false, destructiveHint: false },
   );
 
   register(
@@ -346,7 +346,7 @@ The recipient "id" MUST match the number in text tags (id:"1" matches {{signatur
     "Send a reminder email for a document (optionally to a specific recipient).",
     reminderSchema,
     (input, extra) => handleSendReminder(client, input, extra),
-    { readOnlyHint: false, destructiveHint: false },
+    { title: "Send Reminder", readOnlyHint: false, destructiveHint: false },
   );
 
   register(
@@ -354,7 +354,7 @@ The recipient "id" MUST match the number in text tags (id:"1" matches {{signatur
     "Fetch the completed PDF. Use mode: 'base64' to get content for displaying in an artifact or chat (embed as data:application/pdf;base64,{pdf_base64}). Default 'url' mode returns a shareable link.",
     completedPdfSchema,
     (input, extra) => handleCompletedPdf(client, input, extra),
-    { readOnlyHint: false, destructiveHint: false },
+    { title: "Completed PDF", readOnlyHint: false, destructiveHint: false },
   );
 
   registerDocumentPrompt(server, client);

@@ -63,7 +63,7 @@ CHAT ATTACHMENTS: When a user uploads/attaches a file in the chat, DO NOT use re
 
 CLAUDE-GENERATED FILES: If YOU created the file content (e.g. generated a PDF), do NOT use file_store. Pass file_base64 directly to document_create instead.`,
       inputSchema: selectFileSchema,
-      annotations: { readOnlyHint: false, destructiveHint: false },
+      annotations: { title: "Store File", readOnlyHint: false, destructiveHint: false },
     },
     async (input, extra) => handleFileStore(input as SelectFileInput, extra as ToolExtra),
   );

@@ -1830,7 +1830,7 @@ CHAT ATTACHMENTS: When a user uploads/attaches a file in the chat, DO NOT use re
 
 CLAUDE-GENERATED FILES: If YOU created the file content (e.g. generated a PDF), do NOT use file_store. Pass file_base64 directly to document_create instead.`,
       inputSchema: selectFileSchema,
-      annotations: { readOnlyHint: false, destructiveHint: false }
+      annotations: { title: "Store File", readOnlyHint: false, destructiveHint: false }
     },
     async (input2, extra) => handleFileStore(input2, extra)
   );
@@ -2233,42 +2233,42 @@ TEXT TAGS (optional): Set text_tags: true only if the document already contains 
 The recipient "id" MUST match the number in text tags (id:"1" matches {{signature:1:y}}).`,
     createDocumentSchema,
     (input2, extra) => handleCreateDocument(client, input2, extra),
-    { readOnlyHint: false, destructiveHint: false }
+    { title: "Create Document", readOnlyHint: false, destructiveHint: false }
   );
   register(
     "document_list",
     "List SignWell documents with optional filtering (status, archived, search).",
     listDocumentsSchema,
     (input2, extra) => handleListDocuments(client, input2, extra),
-    { readOnlyHint: true }
+    { title: "List Documents", readOnlyHint: true }
   );
   register(
     "document_get",
     "Fetch the latest status for a SignWell document.",
     getDocumentSchema,
     (input2, extra) => handleGetDocument(client, input2, extra),
-    { readOnlyHint: true }
+    { title: "Get Document", readOnlyHint: true }
   );
   register(
     "document_send_draft",
     "Send a previously created draft document (requires confirm_send).",
     sendDraftSchema,
     (input2, extra) => handleSendDraft(client, input2, extra),
-    { readOnlyHint: false, destructiveHint: false }
+    { title: "Send Draft", readOnlyHint: false, destructiveHint: false }
   );
   register(
     "document_send_reminder",
     "Send a reminder email for a document (optionally to a specific recipient).",
     reminderSchema,
     (input2, extra) => handleSendReminder(client, input2, extra),
-    { readOnlyHint: false, destructiveHint: false }
+    { title: "Send Reminder", readOnlyHint: false, destructiveHint: false }
   );
   register(
     "document_completed_pdf",
     "Fetch the completed PDF. Use mode: 'base64' to get content for displaying in an artifact or chat (embed as data:application/pdf;base64,{pdf_base64}). Default 'url' mode returns a shareable link.",
     completedPdfSchema,
     (input2, extra) => handleCompletedPdf(client, input2, extra),
-    { readOnlyHint: false, destructiveHint: false }
+    { title: "Completed PDF", readOnlyHint: false, destructiveHint: false }
   );
   registerDocumentPrompt(server, client);
   return count;
@@ -2944,35 +2944,35 @@ COMMON ERRORS:
 - "fields": [] in response = PDF doesn't contain valid text tags, or text_tags wasn't set to true`,
     createTemplateSchema,
     (input2, extra) => handleTemplateCreate(client, input2, extra),
-    { readOnlyHint: false, destructiveHint: false }
+    { title: "Create Template", readOnlyHint: false, destructiveHint: false }
   );
   register(
     "template_update",
     "Update an existing SignWell template. Only provide fields you want to change.",
     updateTemplateSchema,
     (input2, extra) => handleTemplateUpdate(client, input2, extra),
-    { readOnlyHint: false, destructiveHint: false }
+    { title: "Update Template", readOnlyHint: false, destructiveHint: false }
   );
   register(
     "template_get",
     "Fetch an individual SignWell template by ID.",
     getTemplateSchema,
     (input2, _extra) => handleTemplateGet(client, input2),
-    { readOnlyHint: true }
+    { title: "Get Template", readOnlyHint: true }
   );
   register(
     "template_list",
     "List SignWell templates with pagination.",
     listTemplatesSchema,
     (input2, _extra) => handleTemplateList(client, input2),
-    { readOnlyHint: true }
+    { title: "List Templates", readOnlyHint: true }
   );
   register(
     "template_delete",
     "Delete a SignWell template.",
     deleteTemplateSchema,
     (input2, _extra) => handleTemplateDelete(client, input2),
-    { destructiveHint: true }
+    { title: "Delete Template", destructiveHint: true }
   );
   register(
     "template_create_document",
@@ -3000,7 +3000,7 @@ Example:
 }`,
     createFromTemplateSchema,
     (input2, extra) => handleCreateDocumentFromTemplate(client, input2, extra),
-    { readOnlyHint: false, destructiveHint: false }
+    { title: "Send from Template", readOnlyHint: false, destructiveHint: false }
   );
   registerTemplatePrompt(server, client);
   return count;
@@ -3281,7 +3281,7 @@ Returns:
 - Signer numbers referenced
 - Recommendations for fixing issues`,
       inputSchema: validateTextTagsSchema,
-      annotations: { readOnlyHint: true }
+      annotations: { title: "Validate Text Tags", readOnlyHint: true }
     },
     async (input2, extra) => handleValidateTextTags(input2, extra)
   );
