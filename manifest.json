@@ -13,7 +13,11 @@
     "url": "https://github.com/Bidsketch/signwell-mcp"
   },
   "homepage": "https://github.com/Bidsketch/signwell-mcp#readme",
+  "documentation": "https://github.com/Bidsketch/signwell-mcp#readme",
+  "support": "https://github.com/Bidsketch/signwell-mcp/issues",
   "license": "MIT",
+  "icon": "icon.png",
+  "keywords": ["e-signature", "esignature", "signing", "documents", "templates", "contracts"],
   "server": {
     "type": "node",
     "entry_point": "build/index.js",
@@ -23,6 +27,28 @@
       "env": {
         "SIGNWELL_API_KEY": "${user_config.api_key}"
       }
+    }
+  },
+  "tools": [
+    { "name": "document_create", "description": "Create a SignWell document draft for e-signature" },
+    { "name": "document_list", "description": "List SignWell documents with filters and pagination" },
+    { "name": "document_get", "description": "Fetch a SignWell document by ID" },
+    { "name": "document_send_draft", "description": "Send a draft document for signing" },
+    { "name": "document_send_reminder", "description": "Send a signing reminder to recipients" },
+    { "name": "document_completed_pdf", "description": "Download the completed signed PDF" },
+    { "name": "template_create", "description": "Create a reusable SignWell template" },
+    { "name": "template_update", "description": "Update an existing SignWell template" },
+    { "name": "template_get", "description": "Fetch a SignWell template by ID" },
+    { "name": "template_list", "description": "List SignWell templates with pagination" },
+    { "name": "template_delete", "description": "Delete a SignWell template" },
+    { "name": "template_create_document", "description": "Create and send a document from a template" },
+    { "name": "file_store", "description": "Store a file in memory for use with document or template creation" },
+    { "name": "file_validate_text_tags", "description": "Validate text tag placeholders in a PDF file" }
+  ],
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": {
+      "node": ">=18.0.0"
     }
   },
   "user_config": {
