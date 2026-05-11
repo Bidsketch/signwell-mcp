@@ -262,19 +262,37 @@ const checkboxGroupSchema = z.object({
   exact_value: z.number().int().optional(),
 });
 
+function parseStringifiedJson(value: unknown): unknown {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+function stringifiedBoolean(schema = z.boolean()) {
+  return z.preprocess(parseStringifiedJson, schema);
+}
+
+function stringifiedArray<T extends z.ZodType>(schema: z.ZodArray<T>) {
+  return z.preprocess(parseStringifiedJson, schema);
+}
+
 const createTemplateSchema = z.object({
   // ═══════════════════════════════════════════════════════════════════════════
   // REQUIRED FIELDS (per OpenAPI spec)
   // ═══════════════════════════════════════════════════════════════════════════
 
-  files: z
-    .array(templateFileSchema)
+  files: stringifiedArray(z.array(templateFileSchema))
     .describe(
       "REQUIRED. Files to upload. Each needs 'name' plus one of: 'file_url', 'file_base64', or 'resource_uri'.",
     ),
 
-  placeholders: z
-    .array(placeholderSchema)
+  placeholders: stringifiedArray(z.array(placeholderSchema))
     .describe(
       "REQUIRED. Signing roles. Each needs 'id' and 'name'. For text tags, the 'id' must match tag IDs (e.g., id='signer1' matches [sig|req|signer1]).",
     ),
@@ -283,8 +301,7 @@ const createTemplateSchema = z.object({
   // IMPORTANT: Set text_tags=true if PDF contains text tags like [sig|req|id]
   // ═══════════════════════════════════════════════════════════════════════════
 
-  text_tags: z
-    .boolean()
+  text_tags: stringifiedBoolean()
     .optional()
     .describe(
       "Set TRUE if PDF contains text tags like {{signature:1:y}}. Placeholder 'id' values must match the signer numbers in tags (e.g., id='1' for {{signature:1:y}}).",
@@ -297,39 +314,36 @@ const createTemplateSchema = z.object({
   name: z.string().optional().describe("Template name (e.g., 'Permission Slip')."),
   subject: z.string().optional().describe("Email subject for signature requests."),
   message: z.string().optional().describe("Email message for signature requests (max 4000 chars)."),
-  draft: z
-    .boolean()
+  draft: stringifiedBoolean()
     .optional()
     .describe(
       "If true, template stays editable. If false, marked Available. Default: false per API.",
     ),
 
   // Copied placeholders (CC recipients)
-  copied_placeholders: z
-    .array(copiedPlaceholderSchema)
+  copied_placeholders: stringifiedArray(z.array(copiedPlaceholderSchema))
     .optional()
     .describe("Recipients who receive the final document after completion."),
 
   // Document fields
-  fields: z
-    .array(z.array(fieldSchema))
+  fields: stringifiedArray(z.array(z.array(fieldSchema)))
     .optional()
     .describe("2D array of fields: one array per file. Required if draft is false."),
 
   // Attachment requests
-  attachment_requests: z
-    .array(attachmentRequestSchema)
+  attachment_requests: stringifiedArray(z.array(attachmentRequestSchema))
     .optional()
     .describe("Attachments recipients must upload."),
 
   // Checkbox groups
-  checkbox_groups: z
-    .array(checkboxGroupSchema)
+  checkbox_groups: stringifiedArray(z.array(checkboxGroupSchema))
     .optional()
     .describe("Grouped checkbox fields with validation."),
 
   // Labels
-  labels: z.array(labelSchema).optional().describe("Labels for organizing templates."),
+  labels: stringifiedArray(z.array(labelSchema))
+    .optional()
+    .describe("Labels for organizing templates."),
 
   // Expiration and reminders
   expires_in: z
@@ -339,14 +353,16 @@ const createTemplateSchema = z.object({
     .max(365)
     .optional()
     .describe("Days before signature request expires (max 365)."),
-  reminders: z
-    .boolean()
+  reminders: stringifiedBoolean()
     .default(true)
     .optional()
     .describe("Send signing reminders on day 3, 6, and 10."),
 
   // Signing order
-  apply_signing_order: z.boolean().default(false).optional().describe("Recipients sign in order."),
+  apply_signing_order: stringifiedBoolean()
+    .default(false)
+    .optional()
+    .describe("Recipients sign in order."),
 
   // Redirect URLs
   redirect_url: z.string().url().optional().describe("URL to redirect after successful signing."),
@@ -357,13 +373,11 @@ const createTemplateSchema = z.object({
     .describe("URL to redirect if document is declined."),
 
   // Allow actions
-  allow_decline: z
-    .boolean()
+  allow_decline: stringifiedBoolean()
     .default(true)
     .optional()
     .describe("Allow recipients to decline signing."),
-  allow_reassign: z
-    .boolean()
+  allow_reassign: stringifiedBoolean()
     .default(true)
     .optional()
     .describe("Allow recipients to reassign to someone else."),
@@ -408,24 +422,24 @@ const updateTemplateSchema = z.object({
   template_id: z.string().min(1, { message: "template_id is required." }),
 
   // All fields from create are optional for update
-  files: z.array(templateFileSchema).optional(),
-  placeholders: z.array(placeholderSchema).optional(),
+  files: stringifiedArray(z.array(templateFileSchema)).optional(),
+  placeholders: stringifiedArray(z.array(placeholderSchema)).optional(),
   name: z.string().optional(),
   subject: z.string().optional(),
   message: z.string().max(4000).optional(),
-  draft: z.boolean().optional(),
-  copied_placeholders: z.array(copiedPlaceholderSchema).optional(),
-  fields: z.array(z.array(fieldSchema)).optional(),
-  attachment_requests: z.array(attachmentRequestSchema).optional(),
-  checkbox_groups: z.array(checkboxGroupSchema).optional(),
-  labels: z.array(labelSchema).optional(),
+  draft: stringifiedBoolean().optional(),
+  copied_placeholders: stringifiedArray(z.array(copiedPlaceholderSchema)).optional(),
+  fields: stringifiedArray(z.array(z.array(fieldSchema))).optional(),
+  attachment_requests: stringifiedArray(z.array(attachmentRequestSchema)).optional(),
+  checkbox_groups: stringifiedArray(z.array(checkboxGroupSchema)).optional(),
+  labels: stringifiedArray(z.array(labelSchema)).optional(),
   expires_in: z.number().int().min(1).max(365).optional(),
-  reminders: z.boolean().optional(),
-  apply_signing_order: z.boolean().optional(),
+  reminders: stringifiedBoolean().optional(),
+  apply_signing_order: stringifiedBoolean().optional(),
   redirect_url: z.string().url().optional(),
   decline_redirect_url: z.string().url().optional(),
-  allow_decline: z.boolean().optional(),
-  allow_reassign: z.boolean().optional(),
+  allow_decline: stringifiedBoolean().optional(),
+  allow_reassign: stringifiedBoolean().optional(),
   language: z
     .enum([
       "en",
@@ -445,7 +459,7 @@ const updateTemplateSchema = z.object({
       "sk",
     ])
     .optional(),
-  text_tags: z.boolean().optional(),
+  text_tags: stringifiedBoolean().optional(),
   metadata: z.record(z.string(), z.string()).optional(),
   api_application_id: z.string().uuid().optional(),
 });
@@ -797,7 +811,7 @@ async function handleTemplateCreate(
       draft: input.draft ?? true,
     };
     const data = await client.post<TemplateResponse>("/document_templates", payload);
-    (data as Record<string, unknown>).template_builder_url = `https://www.signwell.com/app/template_builder/${data.id}`;
+    (data as unknown as Record<string, unknown>).template_builder_url = `https://www.signwell.com/app/template_builder/${data.id}`;
 
     const warnings: string[] = [];
     const hasFields =

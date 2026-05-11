@@ -176,6 +176,54 @@ describe("registerTemplateTools", () => {
     expect(payload.type).toBe("template_create");
   });
 
+  test("template_create accepts Claude Code stringified arrays and booleans", async () => {
+    const { handlers, client } = setupTemplateTools();
+    const handler = handlers.get("template_create");
+    if (!handler) throw new Error("handler missing");
+
+    const result = await handler({
+      name: "Stringified Template",
+      files: JSON.stringify([
+        { name: "contract.pdf", file_url: "https://example.com/contract.pdf" },
+      ]),
+      placeholders: JSON.stringify([{ id: "signer_1", name: "Signer" }]),
+      text_tags: "true",
+      draft: "false",
+    });
+
+    expect(client.calls[0]).toMatchObject({
+      method: "post",
+      path: "/document_templates",
+    });
+    const body = client.calls[0]?.payload as Record<string, unknown>;
+    expect(body.files).toEqual([
+      { name: "contract.pdf", file_url: "https://example.com/contract.pdf" },
+    ]);
+    expect(body.placeholders).toEqual([{ id: "signer_1", name: "Signer" }]);
+    expect(body.text_tags).toBe(true);
+    expect(body.draft).toBe(false);
+
+    const payload = parseResult(result);
+    expect(payload.ok).toBe(true);
+    expect(payload.type).toBe("template_create");
+  });
+
+  test("template_create rejects invalid stringified arrays and booleans", async () => {
+    const { handlers, client } = setupTemplateTools();
+    const handler = handlers.get("template_create");
+    if (!handler) throw new Error("handler missing");
+
+    await expect(
+      handler({
+        name: "Invalid Stringified Template",
+        files: "not-json",
+        placeholders: JSON.stringify([{ id: "signer_1", name: "Signer" }]),
+        text_tags: "not-a-boolean",
+      }),
+    ).rejects.toThrow();
+    expect(client.calls).toHaveLength(0);
+  });
+
   test("template_create with all fields", async () => {
     const { handlers, client } = setupTemplateTools();
     const handler = handlers.get("template_create");
@@ -252,6 +300,34 @@ describe("registerTemplateTools", () => {
     expect(body.expires_in).toBe(60);
     // template_id should not be in the payload body
     expect(body.template_id).toBeUndefined();
+
+    const payload = parseResult(result);
+    expect(payload.ok).toBe(true);
+    expect(payload.type).toBe("template_update");
+  });
+
+  test("template_update accepts Claude Code stringified arrays and booleans", async () => {
+    const { handlers, client } = setupTemplateTools();
+    const handler = handlers.get("template_update");
+    if (!handler) throw new Error("handler missing");
+
+    const result = await handler({
+      template_id: "tmp_123",
+      labels: JSON.stringify([{ name: "Contracts" }]),
+      reminders: "false",
+      allow_decline: "true",
+      text_tags: "true",
+    });
+
+    expect(client.calls[0]).toMatchObject({
+      method: "put",
+      path: "/document_templates/tmp_123",
+    });
+    const body = client.calls[0]?.payload as Record<string, unknown>;
+    expect(body.labels).toEqual([{ name: "Contracts" }]);
+    expect(body.reminders).toBe(false);
+    expect(body.allow_decline).toBe(true);
+    expect(body.text_tags).toBe(true);
 
     const payload = parseResult(result);
     expect(payload.ok).toBe(true);
