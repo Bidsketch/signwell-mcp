@@ -232,6 +232,72 @@ describe("registerTemplateTools", () => {
     expect(payload.ok).toBe(true);
   });
 
+  test("template_create tolerates Claude Code stringified arrays and booleans", async () => {
+    const { handlers, client } = setupTemplateTools();
+    const handler = handlers.get("template_create");
+    if (!handler) throw new Error("handler missing");
+
+    const result = await handler({
+      name: "Claude Template",
+      placeholders: JSON.stringify([{ id: "client", name: "Client" }]),
+      copied_placeholders: JSON.stringify([{ name: "CC Team" }]),
+      files: JSON.stringify([
+        { name: "agreement.pdf", file_url: "https://example.com/agreement.pdf" },
+      ]),
+      fields: JSON.stringify([
+        [{ x: 100, y: 200, page: 1, placeholder_id: "client", type: "signature" }],
+      ]),
+      attachment_requests: JSON.stringify([{ name: "Driver License", placeholder_id: "client" }]),
+      checkbox_groups: JSON.stringify([
+        {
+          group_name: "Consent",
+          placeholder_id: "client",
+          checkbox_ids: ["agree", "decline"],
+          validation: "exact",
+          exact_value: 1,
+        },
+      ]),
+      labels: JSON.stringify([{ name: "Contracts" }]),
+      text_tags: "true",
+      draft: "false",
+      reminders: "false",
+      apply_signing_order: "true",
+      allow_decline: "false",
+      allow_reassign: "false",
+    });
+
+    const body = client.calls[0]?.payload as Record<string, unknown>;
+    expect(Array.isArray(body.files)).toBe(true);
+    expect(body.placeholders).toEqual([{ id: "client", name: "Client" }]);
+    expect(body.copied_placeholders).toEqual([{ name: "CC Team" }]);
+    expect(body.fields).toEqual([
+      [{ x: 100, y: 200, page: 1, placeholder_id: "client", type: "signature", required: true }],
+    ]);
+    expect(body.attachment_requests).toEqual([
+      { name: "Driver License", placeholder_id: "client", required: true },
+    ]);
+    expect(body.checkbox_groups).toEqual([
+      {
+        group_name: "Consent",
+        placeholder_id: "client",
+        checkbox_ids: ["agree", "decline"],
+        validation: "exact",
+        required: false,
+        exact_value: 1,
+      },
+    ]);
+    expect(body.labels).toEqual([{ name: "Contracts" }]);
+    expect(body.text_tags).toBe(true);
+    expect(body.draft).toBe(false);
+    expect(body.reminders).toBe(false);
+    expect(body.apply_signing_order).toBe(true);
+    expect(body.allow_decline).toBe(false);
+    expect(body.allow_reassign).toBe(false);
+
+    const payload = parseResult(result);
+    expect(payload.ok).toBe(true);
+  });
+
   test("template_update uses PUT method and correct endpoint", async () => {
     const { handlers, client } = setupTemplateTools();
     const handler = handlers.get("template_update");
@@ -256,6 +322,53 @@ describe("registerTemplateTools", () => {
     const payload = parseResult(result);
     expect(payload.ok).toBe(true);
     expect(payload.type).toBe("template_update");
+  });
+
+  test("template_update tolerates Claude Code stringified arrays and booleans", async () => {
+    const { handlers, client } = setupTemplateTools();
+    const handler = handlers.get("template_update");
+    if (!handler) throw new Error("handler missing");
+
+    const result = await handler({
+      template_id: "tmp_123",
+      placeholders: JSON.stringify([{ id: "client", name: "Client" }]),
+      files: JSON.stringify([
+        { name: "agreement.pdf", file_url: "https://example.com/agreement.pdf" },
+      ]),
+      fields: JSON.stringify([
+        [{ x: 100, y: 200, page: 1, placeholder_id: "client", type: "signature" }],
+      ]),
+      labels: JSON.stringify([{ name: "Contracts" }]),
+      draft: "true",
+      reminders: "false",
+      apply_signing_order: "true",
+      allow_decline: "false",
+      allow_reassign: "true",
+      text_tags: "true",
+    });
+
+    expect(client.calls[0]).toMatchObject({
+      method: "put",
+      path: "/document_templates/tmp_123",
+    });
+    const body = client.calls[0]?.payload as Record<string, unknown>;
+    expect(body.files).toEqual([
+      { name: "agreement.pdf", file_url: "https://example.com/agreement.pdf" },
+    ]);
+    expect(body.placeholders).toEqual([{ id: "client", name: "Client" }]);
+    expect(body.fields).toEqual([
+      [{ x: 100, y: 200, page: 1, placeholder_id: "client", type: "signature", required: true }],
+    ]);
+    expect(body.labels).toEqual([{ name: "Contracts" }]);
+    expect(body.draft).toBe(true);
+    expect(body.reminders).toBe(false);
+    expect(body.apply_signing_order).toBe(true);
+    expect(body.allow_decline).toBe(false);
+    expect(body.allow_reassign).toBe(true);
+    expect(body.text_tags).toBe(true);
+
+    const payload = parseResult(result);
+    expect(payload.ok).toBe(true);
   });
 
   test("template_get fetches template by id", async () => {
@@ -286,6 +399,15 @@ describe("registerTemplateTools", () => {
     const handler = handlers.get("template_list");
     if (!handler) throw new Error("handler missing");
 
+    client.responses["/document_templates"] = {
+      templates: [{ id: "tmp_1", name: "Lease Template" }],
+      current_page: 2,
+      next_page: null,
+      previous_page: 1,
+      total_count: 1,
+      total_pages: 2,
+    };
+
     const result = await handler({ page: 2, per_page: 10 });
 
     expect(client.calls[0]).toMatchObject({
@@ -298,6 +420,11 @@ describe("registerTemplateTools", () => {
     const payload = parseResult(result);
     expect(payload.ok).toBe(true);
     expect(payload.type).toBe("template_list");
+    const data = payload.data as Record<string, unknown>;
+    expect(data).toHaveProperty("templates");
+    expect(data).not.toHaveProperty("entries");
+    expect(data.templates).toEqual([{ id: "tmp_1", name: "Lease Template" }]);
+    expect(data.total_count).toBe(1);
   });
 
   test("template_delete removes template", async () => {

@@ -126,8 +126,7 @@ export async function runSetup(args: string[], options: SetupOptions = {}): Prom
   const entryResolution = resolveEntryPoint();
   const repositoryPath = entryResolution?.repositoryPath ?? process.cwd();
   const runner = entryResolution?.runner ?? "node";
-  const entryPoint =
-    entryResolution?.entryPoint ?? path.resolve(repositoryPath, "build/index.js");
+  const entryPoint = entryResolution?.entryPoint ?? path.resolve(repositoryPath, "build/index.js");
   const isLocalDev = entryResolution?.isLocalDev ?? false;
   const launchEnvironment = resolveLaunchEnvironment(flags);
 

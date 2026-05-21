@@ -268,6 +268,15 @@ describe("registerDocumentTools", () => {
       throw new Error("handler missing");
     }
 
+    client.getResponse = {
+      documents: [{ id: "doc_1", name: "Q4 Agreement", status: "completed" }],
+      current_page: 2,
+      next_page: null,
+      previous_page: 1,
+      total_count: 1,
+      total_pages: 2,
+    };
+
     const result = await handler({
       status: "completed",
       archived: false,
@@ -290,6 +299,11 @@ describe("registerDocumentTools", () => {
     const payload = parseResult(result);
     expect(payload.ok).toBe(true);
     expect(payload.type).toBe("document_list");
+    const data = payload.data as Record<string, unknown>;
+    expect(data).toHaveProperty("documents");
+    expect(data).not.toHaveProperty("entries");
+    expect(data.documents).toEqual([{ id: "doc_1", name: "Q4 Agreement", status: "completed" }]);
+    expect(data.total_count).toBe(1);
   });
 
   test("create tool enforces recipient validation", async () => {

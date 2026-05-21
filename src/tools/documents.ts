@@ -11,6 +11,25 @@ import { textToDocx } from "../utils/docx-generator.ts";
 import { errorResponse, successResponse, validationError } from "../utils/responses.ts";
 import { getStoredFile } from "./files.ts";
 
+export interface DocumentResponse {
+  id: string;
+  name?: string;
+  status?: string;
+  archived?: boolean;
+  created_at?: string;
+  updated_at?: string;
+  [key: string]: unknown;
+}
+
+export interface DocumentListResponse {
+  documents: DocumentResponse[];
+  current_page: number;
+  next_page: number | null;
+  previous_page: number | null;
+  total_count: number;
+  total_pages: number;
+}
+
 const recipientSchema = z.object({
   id: z.string().min(1, { message: "Recipient id is required (e.g. '1')." }),
   email: z.string().email({ message: "Recipient email must be valid." }),
@@ -50,17 +69,11 @@ const createDocumentSchema = z.object({
   subject: z.string().optional().describe("Email subject line recipients will see."),
   message: z.string().optional().describe("Email message recipients will see."),
   text_tags: z.boolean().optional(),
-  draft: z
-    .boolean()
-    .optional()
-    .describe("If true, document is created as a draft and not sent. Default: false."),
   apply_signing_order: z
     .boolean()
     .default(false)
     .optional()
-    .describe(
-      "When true, recipients sign one at a time in the order of the recipients array.",
-    ),
+    .describe("When true, recipients sign one at a time in the order of the recipients array."),
   copied_contacts: z
     .array(copiedContactSchema)
     .optional()
@@ -104,7 +117,11 @@ const createDocumentSchema = z.object({
     .optional()
     .describe("Send completion notifications when using embedded signing."),
   custom_requester_name: z.string().optional().describe("Custom requester name on communications."),
-  custom_requester_email: z.string().email().optional().describe("Custom requester email on communications."),
+  custom_requester_email: z
+    .string()
+    .email()
+    .optional()
+    .describe("Custom requester email on communications."),
 });
 
 const listDocumentsSchema = z.object({
@@ -440,7 +457,7 @@ async function handleListDocuments(
       query.updated_before = input.updated_before;
     }
 
-    const data = await client.get("/documents", { query });
+    const data = await client.get<DocumentListResponse>("/documents", { query });
     return successResponse({
       type: "document_list",
       message: "Fetched documents.",
