@@ -51,11 +51,13 @@ type PromptHandler = (args: Record<string, unknown>) => Promise<{
 
 function setupTools() {
   const handlers = new Map<string, ToolHandler>();
+  const toolConfigs = new Map<string, { description?: string }>();
   let promptHandler: PromptHandler | null = null;
   let promptName = "";
   const serverStub = {
     registerTool: (_name: string, _config: unknown, handler: ToolHandler) => {
       handlers.set(_name, handler);
+      toolConfigs.set(_name, _config as { description?: string });
       return {} as unknown;
     },
     registerPrompt: (_name: string, _config: unknown, cb: PromptHandler) => {
@@ -67,7 +69,7 @@ function setupTools() {
 
   const client = new MockClient();
   const count = registerDocumentTools(serverStub as unknown as McpServer, client as never);
-  return { handlers, client, count, promptHandler, promptName };
+  return { handlers, client, count, promptHandler, promptName, toolConfigs };
 }
 
 function parseResult(result: CallToolResult) {
@@ -114,6 +116,45 @@ describe("registerDocumentTools", () => {
     expect(payload.ok).toBe(true);
     expect(payload.type).toBe("document_create");
     expect(payload.message).toBe("Document draft created.");
+  });
+
+  test("create tool accepts html file types supported by SignWell API", async () => {
+    const { handlers, client } = setupTools();
+    const handler = handlers.get("document_create");
+    if (!handler) {
+      throw new Error("handler missing");
+    }
+
+    for (const name of ["doc.html", "doc.htm"]) {
+      const result = await handler({
+        name: "Agreement",
+        recipients: [{ id: "1", email: "a@example.com" }],
+        files: [{ name, file_url: `https://example.com/${name}` }],
+      });
+
+      expect(result.isError).toBeUndefined();
+      const payload = parseResult(result);
+      expect(payload.ok).toBe(true);
+      expect(payload.type).toBe("document_create");
+    }
+
+    expect(client.calls).toHaveLength(2);
+    expect(client.calls.map((call) => call.body)).toEqual([
+      expect.objectContaining({
+        files: [expect.objectContaining({ name: "doc.html" })],
+      }),
+      expect.objectContaining({
+        files: [expect.objectContaining({ name: "doc.htm" })],
+      }),
+    ]);
+  });
+
+  test("create tool description advertises html file types", () => {
+    const { toolConfigs } = setupTools();
+
+    const description = toolConfigs.get("document_create")?.description;
+    expect(description).toContain(".html");
+    expect(description).toContain(".htm");
   });
 
   test("create tool surfaces editor link when provided by API", async () => {

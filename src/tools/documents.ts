@@ -179,7 +179,7 @@ type SendDraftInput = z.infer<typeof sendDraftSchema>;
 type ReminderInput = z.infer<typeof reminderSchema>;
 type CompletedPdfInput = z.infer<typeof completedPdfSchema>;
 
-const ALLOWED_FILE_EXTENSIONS = new Set([
+const ALLOWED_FILE_EXTENSIONS = [
   ".pdf",
   ".doc",
   ".docx",
@@ -196,7 +196,11 @@ const ALLOWED_FILE_EXTENSIONS = new Set([
   ".tiff",
   ".tif",
   ".webp",
-]);
+  ".html",
+  ".htm",
+];
+const ALLOWED_FILE_EXTENSION_SET = new Set(ALLOWED_FILE_EXTENSIONS);
+const SUPPORTED_FILE_TYPES = ALLOWED_FILE_EXTENSIONS.join(", ");
 
 function extractExtension(filename: string): string {
   const dot = filename.lastIndexOf(".");
@@ -206,15 +210,15 @@ function extractExtension(filename: string): string {
 function validateFileExtension(name: string, fileUrl?: string): string | undefined {
   const ext = extractExtension(name);
   if (!ext) {
-    return `File "${name}" is missing a file extension. Supported types: ${[...ALLOWED_FILE_EXTENSIONS].join(", ")}`;
+    return `File "${name}" is missing a file extension. Supported types: ${SUPPORTED_FILE_TYPES}`;
   }
-  if (!ALLOWED_FILE_EXTENSIONS.has(ext)) {
-    return `File "${name}" has unsupported extension "${ext}". Supported types: ${[...ALLOWED_FILE_EXTENSIONS].join(", ")}`;
+  if (!ALLOWED_FILE_EXTENSION_SET.has(ext)) {
+    return `File "${name}" has unsupported extension "${ext}". Supported types: ${SUPPORTED_FILE_TYPES}`;
   }
   if (fileUrl) {
     const urlExt = extractExtension(new URL(fileUrl).pathname);
-    if (urlExt && !ALLOWED_FILE_EXTENSIONS.has(urlExt)) {
-      return `File URL for "${name}" points to unsupported type "${urlExt}". Supported types: ${[...ALLOWED_FILE_EXTENSIONS].join(", ")}`;
+    if (urlExt && !ALLOWED_FILE_EXTENSION_SET.has(urlExt)) {
+      return `File URL for "${name}" points to unsupported type "${urlExt}". Supported types: ${SUPPORTED_FILE_TYPES}`;
     }
   }
   return undefined;
@@ -290,7 +294,7 @@ CRITICAL RULES:
 - Do NOT convert files between formats (e.g. do NOT convert .docx to .pdf). SignWell handles conversion automatically.
 - The user will place signature fields in the SignWell editor. Just upload the file and return the editor link.
 
-SUPPORTED FILE TYPES: .pdf, .doc, .docx, .pages, .ppt, .pptx, .key, .xls, .xlsx, .numbers, .jpg, .jpeg, .png, .tiff, .tif, .webp
+SUPPORTED FILE TYPES: ${SUPPORTED_FILE_TYPES}
 
 WORKFLOW FOR USER'S EXISTING FILES:
 1. file_store (call with NO arguments to open native file picker) → returns file_token
