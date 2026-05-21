@@ -2046,10 +2046,7 @@ var createDocumentSchema = z3.object({
   subject: z3.string().optional().describe("Email subject line recipients will see."),
   message: z3.string().optional().describe("Email message recipients will see."),
   text_tags: z3.boolean().optional(),
-  draft: z3.boolean().optional().describe("If true, document is created as a draft and not sent. Default: false."),
-  apply_signing_order: z3.boolean().default(false).optional().describe(
-    "When true, recipients sign one at a time in the order of the recipients array."
-  ),
+  apply_signing_order: z3.boolean().default(false).optional().describe("When true, recipients sign one at a time in the order of the recipients array."),
   copied_contacts: z3.array(copiedContactSchema).optional().describe("CC recipients who receive the final signed document by email."),
   expires_in: z3.number().int().min(1).max(365).optional().describe("Days before the signature request expires (max 365)."),
   reminders: z3.boolean().default(true).optional().describe("Send signing reminders on day 3, 6, and 10."),
@@ -2666,20 +2663,33 @@ var checkboxGroupSchema = z4.object({
   max_value: z4.number().int().optional(),
   exact_value: z4.number().int().optional()
 });
+function parseJsonEncodedString(value) {
+  if (typeof value !== "string") {
+    return value;
+  }
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+function claudeCodeJsonStringTolerant(schema) {
+  return z4.preprocess(parseJsonEncodedString, schema);
+}
 var createTemplateSchema = z4.object({
   // ═══════════════════════════════════════════════════════════════════════════
   // REQUIRED FIELDS (per OpenAPI spec)
   // ═══════════════════════════════════════════════════════════════════════════
-  files: z4.array(templateFileSchema).describe(
+  files: claudeCodeJsonStringTolerant(z4.array(templateFileSchema)).describe(
     "REQUIRED. Files to upload. Each needs 'name' plus one of: 'file_url', 'file_base64', or 'resource_uri'."
   ),
-  placeholders: z4.array(placeholderSchema).describe(
+  placeholders: claudeCodeJsonStringTolerant(z4.array(placeholderSchema)).describe(
     "REQUIRED. Signing roles. Each needs 'id' and 'name'. For text tags, the 'id' must match tag IDs (e.g., id='signer1' matches [sig|req|signer1])."
   ),
   // ═══════════════════════════════════════════════════════════════════════════
   // IMPORTANT: Set text_tags=true if PDF contains text tags like [sig|req|id]
   // ═══════════════════════════════════════════════════════════════════════════
-  text_tags: z4.boolean().optional().describe(
+  text_tags: claudeCodeJsonStringTolerant(z4.boolean()).optional().describe(
     "Set TRUE if PDF contains text tags like {{signature:1:y}}. Placeholder 'id' values must match the signer numbers in tags (e.g., id='1' for {{signature:1:y}})."
   ),
   // ═══════════════════════════════════════════════════════════════════════════
@@ -2688,30 +2698,30 @@ var createTemplateSchema = z4.object({
   name: z4.string().optional().describe("Template name (e.g., 'Permission Slip')."),
   subject: z4.string().optional().describe("Email subject for signature requests."),
   message: z4.string().optional().describe("Email message for signature requests (max 4000 chars)."),
-  draft: z4.boolean().optional().describe(
+  draft: claudeCodeJsonStringTolerant(z4.boolean()).optional().describe(
     "If true, template stays editable. If false, marked Available. Default: false per API."
   ),
   // Copied placeholders (CC recipients)
-  copied_placeholders: z4.array(copiedPlaceholderSchema).optional().describe("Recipients who receive the final document after completion."),
+  copied_placeholders: claudeCodeJsonStringTolerant(z4.array(copiedPlaceholderSchema)).optional().describe("Recipients who receive the final document after completion."),
   // Document fields
-  fields: z4.array(z4.array(fieldSchema)).optional().describe("2D array of fields: one array per file. Required if draft is false."),
+  fields: claudeCodeJsonStringTolerant(z4.array(z4.array(fieldSchema))).optional().describe("2D array of fields: one array per file. Required if draft is false."),
   // Attachment requests
-  attachment_requests: z4.array(attachmentRequestSchema).optional().describe("Attachments recipients must upload."),
+  attachment_requests: claudeCodeJsonStringTolerant(z4.array(attachmentRequestSchema)).optional().describe("Attachments recipients must upload."),
   // Checkbox groups
-  checkbox_groups: z4.array(checkboxGroupSchema).optional().describe("Grouped checkbox fields with validation."),
+  checkbox_groups: claudeCodeJsonStringTolerant(z4.array(checkboxGroupSchema)).optional().describe("Grouped checkbox fields with validation."),
   // Labels
-  labels: z4.array(labelSchema).optional().describe("Labels for organizing templates."),
+  labels: claudeCodeJsonStringTolerant(z4.array(labelSchema)).optional().describe("Labels for organizing templates."),
   // Expiration and reminders
   expires_in: z4.number().int().min(1).max(365).optional().describe("Days before signature request expires (max 365)."),
-  reminders: z4.boolean().default(true).optional().describe("Send signing reminders on day 3, 6, and 10."),
+  reminders: claudeCodeJsonStringTolerant(z4.boolean()).default(true).optional().describe("Send signing reminders on day 3, 6, and 10."),
   // Signing order
-  apply_signing_order: z4.boolean().default(false).optional().describe("Recipients sign in order."),
+  apply_signing_order: claudeCodeJsonStringTolerant(z4.boolean()).default(false).optional().describe("Recipients sign in order."),
   // Redirect URLs
   redirect_url: z4.string().url().optional().describe("URL to redirect after successful signing."),
   decline_redirect_url: z4.string().url().optional().describe("URL to redirect if document is declined."),
   // Allow actions
-  allow_decline: z4.boolean().default(true).optional().describe("Allow recipients to decline signing."),
-  allow_reassign: z4.boolean().default(true).optional().describe("Allow recipients to reassign to someone else."),
+  allow_decline: claudeCodeJsonStringTolerant(z4.boolean()).default(true).optional().describe("Allow recipients to decline signing."),
+  allow_reassign: claudeCodeJsonStringTolerant(z4.boolean()).default(true).optional().describe("Allow recipients to reassign to someone else."),
   // Language
   language: z4.enum([
     "en",
@@ -2738,24 +2748,24 @@ var createTemplateSchema = z4.object({
 var updateTemplateSchema = z4.object({
   template_id: z4.string().min(1, { message: "template_id is required." }),
   // All fields from create are optional for update
-  files: z4.array(templateFileSchema).optional(),
-  placeholders: z4.array(placeholderSchema).optional(),
+  files: claudeCodeJsonStringTolerant(z4.array(templateFileSchema)).optional(),
+  placeholders: claudeCodeJsonStringTolerant(z4.array(placeholderSchema)).optional(),
   name: z4.string().optional(),
   subject: z4.string().optional(),
   message: z4.string().max(4e3).optional(),
-  draft: z4.boolean().optional(),
-  copied_placeholders: z4.array(copiedPlaceholderSchema).optional(),
-  fields: z4.array(z4.array(fieldSchema)).optional(),
-  attachment_requests: z4.array(attachmentRequestSchema).optional(),
-  checkbox_groups: z4.array(checkboxGroupSchema).optional(),
-  labels: z4.array(labelSchema).optional(),
+  draft: claudeCodeJsonStringTolerant(z4.boolean()).optional(),
+  copied_placeholders: claudeCodeJsonStringTolerant(z4.array(copiedPlaceholderSchema)).optional(),
+  fields: claudeCodeJsonStringTolerant(z4.array(z4.array(fieldSchema))).optional(),
+  attachment_requests: claudeCodeJsonStringTolerant(z4.array(attachmentRequestSchema)).optional(),
+  checkbox_groups: claudeCodeJsonStringTolerant(z4.array(checkboxGroupSchema)).optional(),
+  labels: claudeCodeJsonStringTolerant(z4.array(labelSchema)).optional(),
   expires_in: z4.number().int().min(1).max(365).optional(),
-  reminders: z4.boolean().optional(),
-  apply_signing_order: z4.boolean().optional(),
+  reminders: claudeCodeJsonStringTolerant(z4.boolean()).optional(),
+  apply_signing_order: claudeCodeJsonStringTolerant(z4.boolean()).optional(),
   redirect_url: z4.string().url().optional(),
   decline_redirect_url: z4.string().url().optional(),
-  allow_decline: z4.boolean().optional(),
-  allow_reassign: z4.boolean().optional(),
+  allow_decline: claudeCodeJsonStringTolerant(z4.boolean()).optional(),
+  allow_reassign: claudeCodeJsonStringTolerant(z4.boolean()).optional(),
   language: z4.enum([
     "en",
     "fr",
@@ -2773,7 +2783,7 @@ var updateTemplateSchema = z4.object({
     "tr",
     "sk"
   ]).optional(),
-  text_tags: z4.boolean().optional(),
+  text_tags: claudeCodeJsonStringTolerant(z4.boolean()).optional(),
   metadata: z4.record(z4.string(), z4.string()).optional(),
   api_application_id: z4.string().uuid().optional()
 });
@@ -2821,9 +2831,7 @@ var createFromTemplateSchema = z4.object({
   embedded_signing: z4.boolean().default(false).optional(),
   embedded_signing_notifications: z4.boolean().default(false).optional(),
   text_tags: z4.boolean().default(false).optional(),
-  apply_signing_order: z4.boolean().default(false).optional().describe(
-    "When true, recipients sign one at a time in the order of the recipients array."
-  ),
+  apply_signing_order: z4.boolean().default(false).optional().describe("When true, recipients sign one at a time in the order of the recipients array."),
   custom_requester_name: z4.string().optional(),
   custom_requester_email: z4.string().email().optional(),
   redirect_url: z4.string().url().optional(),

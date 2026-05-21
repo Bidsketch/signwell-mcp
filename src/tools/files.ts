@@ -49,8 +49,7 @@ export function registerFileTools(server: McpServer): number {
   server.registerTool(
     "file_store",
     {
-      description:
-        `Store a user's existing file for upcoming SignWell requests. Returns a file_token you can pass to document/template tools.
+      description: `Store a user's existing file for upcoming SignWell requests. Returns a file_token you can pass to document/template tools.
 
 IMPORTANT: This tool is for the USER'S EXISTING FILES only. Do NOT read, parse, or convert the file — upload it as-is.
 
