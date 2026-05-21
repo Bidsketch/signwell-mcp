@@ -2073,9 +2073,19 @@ var documentIdSchema = z3.string().min(1, { message: "document_id is required." 
 var getDocumentSchema = z3.object({
   document_id: documentIdSchema
 });
+function parseJsonEncodedString(value) {
+  if (typeof value !== "string") {
+    return value;
+  }
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
 var sendDraftSchema = z3.object({
   document_id: documentIdSchema,
-  confirm_send: z3.boolean().default(false),
+  confirm_send: z3.preprocess(parseJsonEncodedString, z3.boolean()).default(false),
   message: z3.string().optional()
 });
 var reminderSchema = z3.object({
@@ -2663,7 +2673,7 @@ var checkboxGroupSchema = z4.object({
   max_value: z4.number().int().optional(),
   exact_value: z4.number().int().optional()
 });
-function parseJsonEncodedString(value) {
+function parseJsonEncodedString2(value) {
   if (typeof value !== "string") {
     return value;
   }
@@ -2674,7 +2684,7 @@ function parseJsonEncodedString(value) {
   }
 }
 function claudeCodeJsonStringTolerant(schema) {
-  return z4.preprocess(parseJsonEncodedString, schema);
+  return z4.preprocess(parseJsonEncodedString2, schema);
 }
 var createTemplateSchema = z4.object({
   // ═══════════════════════════════════════════════════════════════════════════

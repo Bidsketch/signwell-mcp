@@ -340,6 +340,46 @@ describe("registerDocumentTools", () => {
     expect(payload.type).toBe("validation");
   });
 
+  test("send draft tolerates Claude Code stringified confirm flag", async () => {
+    const { handlers, client } = setupTools();
+    const handler = handlers.get("document_send_draft");
+    if (!handler) {
+      throw new Error("handler missing");
+    }
+
+    const result = await handler({
+      document_id: "doc_123",
+      confirm_send: "true",
+      message: "Please sign this document.",
+    });
+
+    expect(client.calls).toHaveLength(1);
+    expect(client.calls[0]).toMatchObject({
+      method: "post",
+      path: "/documents/doc_123/send",
+      body: { message: "Please sign this document." },
+    });
+    const payload = parseResult(result);
+    expect(payload.ok).toBe(true);
+    expect(payload.type).toBe("document_send_draft");
+  });
+
+  test("send draft rejects invalid stringified confirm flag", async () => {
+    const { handlers, client } = setupTools();
+    const handler = handlers.get("document_send_draft");
+    if (!handler) {
+      throw new Error("handler missing");
+    }
+
+    await expect(
+      handler({
+        document_id: "doc_123",
+        confirm_send: "not-a-boolean",
+      }),
+    ).rejects.toThrow();
+    expect(client.calls).toHaveLength(0);
+  });
+
   test("get tool returns client response", async () => {
     const { handlers } = setupTools();
     const handler = handlers.get("document_get");

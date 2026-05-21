@@ -140,9 +140,21 @@ const getDocumentSchema = z.object({
   document_id: documentIdSchema,
 });
 
+function parseJsonEncodedString(value: unknown): unknown {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return value;
+  }
+}
+
 const sendDraftSchema = z.object({
   document_id: documentIdSchema,
-  confirm_send: z.boolean().default(false),
+  confirm_send: z.preprocess(parseJsonEncodedString, z.boolean()).default(false),
   message: z.string().optional(),
 });
 
