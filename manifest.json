@@ -3,7 +3,7 @@
   "name": "signwell",
   "display_name": "SignWell",
   "description": "Model Context Protocol server that orchestrates SignWell's e-signature workflows — create, send, track, and manage documents and templates.",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "author": {
     "name": "SignWell",
     "url": "https://www.signwell.com"

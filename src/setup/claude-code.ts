@@ -12,23 +12,28 @@ import type {
 
 /**
  * Returns the path to the Claude Code CLI MCP configuration file.
- * Claude Code CLI stores MCP servers in ~/.claude/mcp.json on all platforms.
+ * Claude Code stores user-scoped MCP servers in ~/.claude.json.
  */
 export function getClaudeCodeConfigPath(options: { homeDir?: string } = {}): string {
+  const home = options.homeDir ?? os.homedir();
+  return path.join(home, ".claude.json");
+}
+
+function getLegacyClaudeCodeConfigPath(options: { homeDir?: string } = {}): string {
   const home = options.homeDir ?? os.homedir();
   return path.join(home, ".claude", "mcp.json");
 }
 
 export function buildClaudeCodeSnippet(context: SetupRenderContext): ClientSnippet {
-  const snippet = buildServerEntrySnippet(context);
+  const snippet = buildMcpServersSnippet(context);
 
   return {
     name: "Claude Code",
-    configPath: `${getClaudeCodeConfigPath()} · servers.${context.serverName}`,
+    configPath: `${getClaudeCodeConfigPath()} · mcpServers.${context.serverName}`,
     snippet,
     notes: [
-      "Claude Code CLI stores MCP configuration in ~/.claude/mcp.json.",
-      `Add or update the "servers.${context.serverName}" entry with the snippet below.`,
+      "Claude Code stores user-scoped MCP configuration in ~/.claude.json.",
+      `Add or update mcpServers.${context.serverName} with the snippet below.`,
       "Claude Code will automatically detect the new server on next startup.",
     ],
   };
@@ -40,7 +45,7 @@ export async function applyClaudeCodeConfig(
 ): Promise<ClientWriteResult> {
   const configPath = options.filePathOverride ?? getClaudeCodeConfigPath();
   const serverEntry = buildServerEntryObject(context);
-  const snippet = buildServerEntrySnippet(context);
+  const snippet = buildMcpServersSnippet(context);
 
   if (options.printOnly) {
     return {
@@ -51,9 +56,8 @@ export async function applyClaudeCodeConfig(
     };
   }
 
-  const config = await readMcpConfig(configPath);
+  const config = await readClaudeCodeConfig(configPath);
 
-  // Ensure the .claude directory exists with appropriate permissions
   const dir = path.dirname(configPath);
   await fsp.mkdir(dir, { recursive: true, mode: 0o700 });
 
@@ -63,19 +67,19 @@ export async function applyClaudeCodeConfig(
     await fsp.copyFile(configPath, backupPath);
   }
 
-  // Initialize servers object if needed
   if (
-    typeof config.servers !== "object" ||
-    config.servers === null ||
-    Array.isArray(config.servers)
+    typeof config.mcpServers !== "object" ||
+    config.mcpServers === null ||
+    Array.isArray(config.mcpServers)
   ) {
-    config.servers = {};
+    config.mcpServers = {};
   }
 
-  config.servers[context.serverName] = serverEntry;
+  config.mcpServers[context.serverName] = serverEntry;
 
   const serialized = `${JSON.stringify(config, null, 2)}\n`;
   await fsp.writeFile(configPath, serialized);
+  await cleanupLegacyClaudeCodeConfig(path.dirname(configPath), context.serverName);
 
   return {
     name: "Claude Code",
@@ -87,19 +91,26 @@ export async function applyClaudeCodeConfig(
 }
 
 type ClaudeCodeServerEntry = {
+  type: "stdio";
   command: string;
   args: string[];
   env?: Record<string, string>;
 };
 
-type ClaudeCodeMcpConfig = {
-  servers?: Record<string, ClaudeCodeServerEntry>;
+type ClaudeCodeConfig = Record<string, unknown> & {
+  mcpServers?: Record<string, ClaudeCodeServerEntry>;
 };
 
-function buildServerEntrySnippet(context: SetupRenderContext): string {
+type LegacyClaudeCodeConfig = Record<string, unknown> & {
+  servers?: Record<string, unknown>;
+};
+
+function buildMcpServersSnippet(context: SetupRenderContext): string {
   return JSON.stringify(
     {
-      [context.serverName]: buildServerEntryObject(context),
+      mcpServers: {
+        [context.serverName]: buildServerEntryObject(context),
+      },
     },
     null,
     2,
@@ -108,6 +119,7 @@ function buildServerEntrySnippet(context: SetupRenderContext): string {
 
 function buildServerEntryObject(context: SetupRenderContext): ClaudeCodeServerEntry {
   const entry: ClaudeCodeServerEntry = {
+    type: "stdio",
     command: context.launchCommand.command,
     args: context.launchCommand.args,
   };
@@ -117,14 +129,14 @@ function buildServerEntryObject(context: SetupRenderContext): ClaudeCodeServerEn
   return entry;
 }
 
-async function readMcpConfig(filePath: string): Promise<ClaudeCodeMcpConfig> {
+async function readClaudeCodeConfig(filePath: string): Promise<ClaudeCodeConfig> {
   try {
     const raw = await fsp.readFile(filePath, "utf8");
     const trimmed = raw.trim();
     if (!trimmed) {
       return {};
     }
-    return JSON.parse(trimmed) as ClaudeCodeMcpConfig;
+    return JSON.parse(trimmed) as ClaudeCodeConfig;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       return {};
@@ -132,6 +144,38 @@ async function readMcpConfig(filePath: string): Promise<ClaudeCodeMcpConfig> {
     throw new Error(
       `[SignWell MCP] Unable to parse Claude Code MCP config at ${filePath}: ${(error as Error).message}`,
     );
+  }
+}
+
+async function cleanupLegacyClaudeCodeConfig(homeDir: string, serverName: string): Promise<void> {
+  const legacyPath = getLegacyClaudeCodeConfigPath({ homeDir });
+
+  try {
+    const raw = await fsp.readFile(legacyPath, "utf8");
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    const config = JSON.parse(trimmed) as LegacyClaudeCodeConfig;
+    if (
+      typeof config.servers !== "object" ||
+      config.servers === null ||
+      Array.isArray(config.servers) ||
+      !Object.hasOwn(config.servers, serverName)
+    ) {
+      return;
+    }
+
+    const backupPath = `${legacyPath}.backup-${timestamp()}`;
+    await fsp.copyFile(legacyPath, backupPath);
+    delete config.servers[serverName];
+    await fsp.writeFile(legacyPath, `${JSON.stringify(config, null, 2)}\n`);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return;
+    }
+    // Legacy cleanup should never make a successful reinstall fail.
   }
 }
 
