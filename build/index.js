@@ -176,17 +176,21 @@ import os2 from "node:os";
 import path2 from "node:path";
 function getClaudeCodeConfigPath(options = {}) {
   const home = options.homeDir ?? os2.homedir();
+  return path2.join(home, ".claude.json");
+}
+function getLegacyClaudeCodeConfigPath(options = {}) {
+  const home = options.homeDir ?? os2.homedir();
   return path2.join(home, ".claude", "mcp.json");
 }
 function buildClaudeCodeSnippet(context) {
-  const snippet = buildServerEntrySnippet(context);
+  const snippet = buildMcpServersSnippet(context);
   return {
     name: "Claude Code",
-    configPath: `${getClaudeCodeConfigPath()} \xB7 servers.${context.serverName}`,
+    configPath: `${getClaudeCodeConfigPath()} \xB7 mcpServers.${context.serverName}`,
     snippet,
     notes: [
-      "Claude Code CLI stores MCP configuration in ~/.claude/mcp.json.",
-      `Add or update the "servers.${context.serverName}" entry with the snippet below.`,
+      "Claude Code stores user-scoped MCP configuration in ~/.claude.json.",
+      `Add or update mcpServers.${context.serverName} with the snippet below.`,
       "Claude Code will automatically detect the new server on next startup."
     ]
   };
@@ -194,7 +198,7 @@ function buildClaudeCodeSnippet(context) {
 async function applyClaudeCodeConfig(context, options = {}) {
   const configPath = options.filePathOverride ?? getClaudeCodeConfigPath();
   const serverEntry = buildServerEntryObject(context);
-  const snippet = buildServerEntrySnippet(context);
+  const snippet = buildMcpServersSnippet(context);
   if (options.printOnly) {
     return {
       name: "Claude Code",
@@ -203,7 +207,7 @@ async function applyClaudeCodeConfig(context, options = {}) {
       snippet
     };
   }
-  const config = await readMcpConfig(configPath);
+  const config = await readClaudeCodeConfig(configPath);
   const dir = path2.dirname(configPath);
   await fsp.mkdir(dir, { recursive: true, mode: 448 });
   let backupPath;
@@ -211,13 +215,14 @@ async function applyClaudeCodeConfig(context, options = {}) {
     backupPath = `${configPath}.backup-${timestamp()}`;
     await fsp.copyFile(configPath, backupPath);
   }
-  if (typeof config.servers !== "object" || config.servers === null || Array.isArray(config.servers)) {
-    config.servers = {};
+  if (typeof config.mcpServers !== "object" || config.mcpServers === null || Array.isArray(config.mcpServers)) {
+    config.mcpServers = {};
   }
-  config.servers[context.serverName] = serverEntry;
+  config.mcpServers[context.serverName] = serverEntry;
   const serialized = `${JSON.stringify(config, null, 2)}
 `;
   await fsp.writeFile(configPath, serialized);
+  await cleanupLegacyClaudeCodeConfig(path2.dirname(configPath), context.serverName);
   return {
     name: "Claude Code",
     path: configPath,
@@ -226,10 +231,12 @@ async function applyClaudeCodeConfig(context, options = {}) {
     snippet
   };
 }
-function buildServerEntrySnippet(context) {
+function buildMcpServersSnippet(context) {
   return JSON.stringify(
     {
-      [context.serverName]: buildServerEntryObject(context)
+      mcpServers: {
+        [context.serverName]: buildServerEntryObject(context)
+      }
     },
     null,
     2
@@ -237,6 +244,7 @@ function buildServerEntrySnippet(context) {
 }
 function buildServerEntryObject(context) {
   const entry = {
+    type: "stdio",
     command: context.launchCommand.command,
     args: context.launchCommand.args
   };
@@ -245,7 +253,7 @@ function buildServerEntryObject(context) {
   }
   return entry;
 }
-async function readMcpConfig(filePath) {
+async function readClaudeCodeConfig(filePath) {
   try {
     const raw = await fsp.readFile(filePath, "utf8");
     const trimmed = raw.trim();
@@ -260,6 +268,29 @@ async function readMcpConfig(filePath) {
     throw new Error(
       `[SignWell MCP] Unable to parse Claude Code MCP config at ${filePath}: ${error.message}`
     );
+  }
+}
+async function cleanupLegacyClaudeCodeConfig(homeDir, serverName) {
+  const legacyPath = getLegacyClaudeCodeConfigPath({ homeDir });
+  try {
+    const raw = await fsp.readFile(legacyPath, "utf8");
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      return;
+    }
+    const config = JSON.parse(trimmed);
+    if (typeof config.servers !== "object" || config.servers === null || Array.isArray(config.servers) || !Object.hasOwn(config.servers, serverName)) {
+      return;
+    }
+    const backupPath = `${legacyPath}.backup-${timestamp()}`;
+    await fsp.copyFile(legacyPath, backupPath);
+    delete config.servers[serverName];
+    await fsp.writeFile(legacyPath, `${JSON.stringify(config, null, 2)}
+`);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return;
+    }
   }
 }
 function timestamp() {
@@ -292,7 +323,7 @@ function getClaudeDesktopConfigPath(options = {}) {
 }
 function buildClaudeDesktopSnippet(context) {
   const configPath = getClaudeDesktopConfigPath();
-  const snippetObject = buildDesktopEntry(context);
+  const snippetObject = buildClaudeDesktopConfig(context);
   return {
     name: "Claude Desktop",
     configPath: `${configPath} \xB7 mcpServers.${context.serverName}`,
@@ -306,7 +337,8 @@ function buildClaudeDesktopSnippet(context) {
 }
 async function applyClaudeDesktopConfig(context, options = {}) {
   const configPath = options.filePathOverride ?? getClaudeDesktopConfigPath();
-  const snippetObject = buildDesktopEntry(context);
+  const entry = buildDesktopEntry(context);
+  const snippetObject = buildClaudeDesktopConfig(context);
   const snippet = JSON.stringify(snippetObject, null, 2);
   if (options.printOnly) {
     return {
@@ -318,7 +350,7 @@ async function applyClaudeDesktopConfig(context, options = {}) {
   }
   const config = await readJsonConfig(configPath);
   const servers = typeof config.mcpServers === "object" && config.mcpServers !== null ? config.mcpServers : {};
-  servers[context.serverName] = snippetObject;
+  servers[context.serverName] = entry;
   config.mcpServers = servers;
   await fsp2.mkdir(path3.dirname(configPath), { recursive: true });
   let backupPath;
@@ -337,17 +369,18 @@ async function applyClaudeDesktopConfig(context, options = {}) {
     snippet
   };
 }
+function buildClaudeDesktopConfig(context) {
+  return {
+    mcpServers: {
+      [context.serverName]: buildDesktopEntry(context)
+    }
+  };
+}
 function buildDesktopEntry(context) {
   const entry = {
     command: context.launchCommand.command,
-    args: context.launchCommand.args,
-    metadata: {
-      description: "SignWell MCP server"
-    }
+    args: context.launchCommand.args
   };
-  if (context.isLocalDev) {
-    entry.cwd = context.repositoryPath;
-  }
   if (context.environment && Object.keys(context.environment).length > 0) {
     entry.env = context.environment;
   }
@@ -441,12 +474,17 @@ async function readCursorConfig(filePath) {
   }
 }
 function buildCursorConfig(context) {
+  const entry = {
+    type: "stdio",
+    command: context.launchCommand.command,
+    args: context.launchCommand.args
+  };
+  if (context.environment && Object.keys(context.environment).length > 0) {
+    entry.env = context.environment;
+  }
   return {
     mcpServers: {
-      [context.serverName]: {
-        command: context.launchCommand.command,
-        args: context.launchCommand.args
-      }
+      [context.serverName]: entry
     }
   };
 }
@@ -464,27 +502,18 @@ function getOpenCodeConfigPath(options = {}) {
   const platform = options.platform ?? process4.platform;
   const home = options.homeDir ?? os5.homedir();
   if (platform === "win32") {
-    const appData = process4.env.APPDATA ?? path5.join(home, "AppData", "Roaming");
-    return path5.join(appData, "opencode", "config.json");
+    return path5.join(home, ".config", "opencode", "opencode.json");
   }
-  return path5.join(home, ".config", "opencode", "config.json");
+  return path5.join(home, ".config", "opencode", "opencode.json");
 }
 function buildOpenCodeSnippet(context) {
-  const snippetObject = buildOpenCodeEntry(context);
+  const snippetObject = buildOpenCodeConfig(context);
   return {
     name: "OpenCode",
     configPath: `${getOpenCodeConfigPath()} \xB7 mcp.${context.serverName}`,
-    snippet: JSON.stringify(
-      {
-        mcp: {
-          [context.serverName]: snippetObject
-        }
-      },
-      null,
-      2
-    ),
+    snippet: JSON.stringify(snippetObject, null, 2),
     notes: [
-      "OpenCode stores MCP settings in ~/.config/opencode/config.json (or %APPDATA%/opencode).",
+      "OpenCode stores global MCP settings in ~/.config/opencode/opencode.json.",
       "The wizard updates this file automatically and keeps a timestamped backup per run."
     ]
   };
@@ -492,7 +521,7 @@ function buildOpenCodeSnippet(context) {
 async function applyOpenCodeConfig(context, options = {}) {
   const configPath = options.filePathOverride ?? getOpenCodeConfigPath();
   const entry = buildOpenCodeEntry(context);
-  const snippet = JSON.stringify(entry, null, 2);
+  const snippet = JSON.stringify(buildOpenCodeConfig(context), null, 2);
   if (options.printOnly) {
     return {
       name: "OpenCode",
@@ -511,6 +540,9 @@ async function applyOpenCodeConfig(context, options = {}) {
   }
   if (typeof config.mcp !== "object" || config.mcp === null || Array.isArray(config.mcp)) {
     config.mcp = {};
+  }
+  if (typeof config.$schema !== "string") {
+    config.$schema = "https://opencode.ai/config.json";
   }
   config.mcp[context.serverName] = entry;
   await fsp4.writeFile(configPath, `${JSON.stringify(config, null, 2)}
@@ -541,12 +573,21 @@ async function readOpenCodeConfig(filePath) {
 function buildOpenCodeEntry(context) {
   const entry = {
     type: "local",
-    command: [context.launchCommand.command, ...context.launchCommand.args]
+    command: [context.launchCommand.command, ...context.launchCommand.args],
+    enabled: true
   };
   if (context.environment && Object.keys(context.environment).length > 0) {
     entry.environment = context.environment;
   }
   return entry;
+}
+function buildOpenCodeConfig(context) {
+  return {
+    $schema: "https://opencode.ai/config.json",
+    mcp: {
+      [context.serverName]: buildOpenCodeEntry(context)
+    }
+  };
 }
 function timestamp3() {
   return (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
@@ -2100,7 +2141,7 @@ var completedPdfSchema = z3.object({
   include_audit_page: z3.boolean().default(true),
   file_format: z3.enum(["pdf", "zip"]).default("pdf")
 });
-var ALLOWED_FILE_EXTENSIONS = /* @__PURE__ */ new Set([
+var ALLOWED_FILE_EXTENSIONS = [
   ".pdf",
   ".doc",
   ".docx",
@@ -2116,8 +2157,12 @@ var ALLOWED_FILE_EXTENSIONS = /* @__PURE__ */ new Set([
   ".png",
   ".tiff",
   ".tif",
-  ".webp"
-]);
+  ".webp",
+  ".html",
+  ".htm"
+];
+var ALLOWED_FILE_EXTENSION_SET = new Set(ALLOWED_FILE_EXTENSIONS);
+var SUPPORTED_FILE_TYPES = ALLOWED_FILE_EXTENSIONS.join(", ");
 function extractExtension(filename) {
   const dot = filename.lastIndexOf(".");
   return dot >= 0 ? filename.slice(dot).toLowerCase() : "";
@@ -2125,15 +2170,15 @@ function extractExtension(filename) {
 function validateFileExtension(name, fileUrl) {
   const ext = extractExtension(name);
   if (!ext) {
-    return `File "${name}" is missing a file extension. Supported types: ${[...ALLOWED_FILE_EXTENSIONS].join(", ")}`;
+    return `File "${name}" is missing a file extension. Supported types: ${SUPPORTED_FILE_TYPES}`;
   }
-  if (!ALLOWED_FILE_EXTENSIONS.has(ext)) {
-    return `File "${name}" has unsupported extension "${ext}". Supported types: ${[...ALLOWED_FILE_EXTENSIONS].join(", ")}`;
+  if (!ALLOWED_FILE_EXTENSION_SET.has(ext)) {
+    return `File "${name}" has unsupported extension "${ext}". Supported types: ${SUPPORTED_FILE_TYPES}`;
   }
   if (fileUrl) {
     const urlExt = extractExtension(new URL(fileUrl).pathname);
-    if (urlExt && !ALLOWED_FILE_EXTENSIONS.has(urlExt)) {
-      return `File URL for "${name}" points to unsupported type "${urlExt}". Supported types: ${[...ALLOWED_FILE_EXTENSIONS].join(", ")}`;
+    if (urlExt && !ALLOWED_FILE_EXTENSION_SET.has(urlExt)) {
+      return `File URL for "${name}" points to unsupported type "${urlExt}". Supported types: ${SUPPORTED_FILE_TYPES}`;
     }
   }
   return void 0;
@@ -2187,7 +2232,7 @@ CRITICAL RULES:
 - Do NOT convert files between formats (e.g. do NOT convert .docx to .pdf). SignWell handles conversion automatically.
 - The user will place signature fields in the SignWell editor. Just upload the file and return the editor link.
 
-SUPPORTED FILE TYPES: .pdf, .doc, .docx, .pages, .ppt, .pptx, .key, .xls, .xlsx, .numbers, .jpg, .jpeg, .png, .tiff, .tif, .webp
+SUPPORTED FILE TYPES: ${SUPPORTED_FILE_TYPES}
 
 WORKFLOW FOR USER'S EXISTING FILES:
 1. file_store (call with NO arguments to open native file picker) \u2192 returns file_token
@@ -3458,7 +3503,7 @@ async function extractPdfText(data) {
 }
 
 // src/index.ts
-var VERSION = true ? "0.3.2" : "dev";
+var VERSION = true ? "0.3.3" : "dev";
 var SERVER_NAME = "signwell";
 var HELP_TEXT2 = `
 SignWell MCP Server v${VERSION}

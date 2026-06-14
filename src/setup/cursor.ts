@@ -79,8 +79,10 @@ export async function applyCursorConfig(
 }
 
 type CursorEntry = {
+  type: "stdio";
   command: string;
   args: string[];
+  env?: Record<string, string>;
 };
 
 type CursorConfig = {
@@ -108,12 +110,18 @@ async function readCursorConfig(filePath: string): Promise<CursorConfig> {
 }
 
 function buildCursorConfig(context: SetupRenderContext): CursorSnippet {
+  const entry: CursorEntry = {
+    type: "stdio",
+    command: context.launchCommand.command,
+    args: context.launchCommand.args,
+  };
+  if (context.environment && Object.keys(context.environment).length > 0) {
+    entry.env = context.environment;
+  }
+
   return {
     mcpServers: {
-      [context.serverName]: {
-        command: context.launchCommand.command,
-        args: context.launchCommand.args,
-      },
+      [context.serverName]: entry,
     },
   };
 }

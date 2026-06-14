@@ -34,7 +34,13 @@ Model Context Protocol server that orchestrates SignWell's e-signature workflows
 
    - Stores your SignWell secrets in `~/.config/signwell-mcp/env` on Linux, `~/Library/Application Support/SignWell/MCP/env` on macOS, or `%APPDATA%/SignWell/MCP/env` on Windows with `0700/0600` permissions.
    - Automatically updates Claude Desktop, Claude Code, Cursor, and OpenCode configuration files (backups are captured before each write) so you do not have to hunt for platform paths.
-   - Prints JSON snippets for all clients plus a generic/manual flow in case you need to double-check or apply them elsewhere.
+   - Client targets:
+     - Claude Code: `~/.claude.json` at `mcpServers.signwell`
+     - Claude Desktop: `claude_desktop_config.json` at `mcpServers.signwell`
+     - Cursor: `~/.cursor/mcp.json` at `mcpServers.signwell`
+     - OpenCode: `~/.config/opencode/opencode.json` at `mcp.signwell` (Windows: `%USERPROFILE%\.config\opencode\opencode.json`)
+   - Uses each client's documented JSON wrapper and STDIO/local server shape so the server is visible after the client restarts.
+   - If a previous Claude Code install wrote the stale `~/.claude/mcp.json` `servers.signwell` entry, rerunning setup backs up that legacy file and removes only the stale SignWell entry after writing the correct `~/.claude.json` config.
    - Use `--print` (or `-p`) to preview outputs without writing to disk, and `--yes --api-key=...` for non-interactive runs (CI, devcontainers, etc.).
    - Pass `--clients=claude-desktop,cursor` to limit which MCP clients the wizard configures; omit for "all". Use `--timeout=<ms>` only if you need a non-default HTTP timeout.
    - After bundling (`npm run build`) and publishing the package, end users can invoke the same wizard with `npx @signwell/mcp setup`. Installing globally also enables invoking `signwell-mcp setup` directly.
@@ -66,6 +72,8 @@ Once the package is published to npm (GitHub: `Bidsketch/signwell-mcp`):
   ```
 
 After configuration, start the MCP server via `signwell-mcp` (requires Node.js v18+).
+
+The `signwell-mcp.mcpb` file is a separate Claude Desktop extension artifact. It uses the root `manifest.json` and should be rebuilt for releases after running `npm run build`.
 
 ## Local Development Workflow
 

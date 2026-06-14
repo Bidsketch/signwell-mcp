@@ -18,29 +18,20 @@ export function getOpenCodeConfigPath(
   const home = options.homeDir ?? os.homedir();
 
   if (platform === "win32") {
-    const appData = process.env.APPDATA ?? path.join(home, "AppData", "Roaming");
-    return path.join(appData, "opencode", "config.json");
+    return path.join(home, ".config", "opencode", "opencode.json");
   }
 
-  return path.join(home, ".config", "opencode", "config.json");
+  return path.join(home, ".config", "opencode", "opencode.json");
 }
 
 export function buildOpenCodeSnippet(context: SetupRenderContext): ClientSnippet {
-  const snippetObject = buildOpenCodeEntry(context);
+  const snippetObject = buildOpenCodeConfig(context);
   return {
     name: "OpenCode",
     configPath: `${getOpenCodeConfigPath()} · mcp.${context.serverName}`,
-    snippet: JSON.stringify(
-      {
-        mcp: {
-          [context.serverName]: snippetObject,
-        },
-      },
-      null,
-      2,
-    ),
+    snippet: JSON.stringify(snippetObject, null, 2),
     notes: [
-      "OpenCode stores MCP settings in ~/.config/opencode/config.json (or %APPDATA%/opencode).",
+      "OpenCode stores global MCP settings in ~/.config/opencode/opencode.json.",
       "The wizard updates this file automatically and keeps a timestamped backup per run.",
     ],
   };
@@ -52,7 +43,7 @@ export async function applyOpenCodeConfig(
 ): Promise<ClientWriteResult> {
   const configPath = options.filePathOverride ?? getOpenCodeConfigPath();
   const entry = buildOpenCodeEntry(context);
-  const snippet = JSON.stringify(entry, null, 2);
+  const snippet = JSON.stringify(buildOpenCodeConfig(context), null, 2);
 
   if (options.printOnly) {
     return {
@@ -78,6 +69,9 @@ export async function applyOpenCodeConfig(
     config.mcp = {};
   }
 
+  if (typeof config.$schema !== "string") {
+    config.$schema = "https://opencode.ai/config.json";
+  }
   config.mcp[context.serverName] = entry;
 
   await fsp.writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
@@ -92,12 +86,14 @@ export async function applyOpenCodeConfig(
 }
 
 type OpenCodeConfig = {
+  $schema?: string;
   mcp?: Record<string, OpenCodeEntry>;
 };
 
 type OpenCodeEntry = {
   type: "local";
   command: string[];
+  enabled: true;
   environment?: Record<string, string>;
 };
 
@@ -121,11 +117,21 @@ function buildOpenCodeEntry(context: SetupRenderContext): OpenCodeEntry {
   const entry: OpenCodeEntry = {
     type: "local",
     command: [context.launchCommand.command, ...context.launchCommand.args],
+    enabled: true,
   };
   if (context.environment && Object.keys(context.environment).length > 0) {
     entry.environment = context.environment;
   }
   return entry;
+}
+
+function buildOpenCodeConfig(context: SetupRenderContext): OpenCodeConfig {
+  return {
+    $schema: "https://opencode.ai/config.json",
+    mcp: {
+      [context.serverName]: buildOpenCodeEntry(context),
+    },
+  };
 }
 
 function timestamp(): string {

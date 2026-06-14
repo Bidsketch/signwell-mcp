@@ -37,7 +37,7 @@ export function getClaudeDesktopConfigPath(
 
 export function buildClaudeDesktopSnippet(context: SetupRenderContext): ClientSnippet {
   const configPath = getClaudeDesktopConfigPath();
-  const snippetObject = buildDesktopEntry(context);
+  const snippetObject = buildClaudeDesktopConfig(context);
 
   return {
     name: "Claude Desktop",
@@ -56,7 +56,8 @@ export async function applyClaudeDesktopConfig(
   options: ClientWriteOptions = {},
 ): Promise<ClientWriteResult> {
   const configPath = options.filePathOverride ?? getClaudeDesktopConfigPath();
-  const snippetObject = buildDesktopEntry(context);
+  const entry = buildDesktopEntry(context);
+  const snippetObject = buildClaudeDesktopConfig(context);
   const snippet = JSON.stringify(snippetObject, null, 2);
 
   if (options.printOnly) {
@@ -73,7 +74,7 @@ export async function applyClaudeDesktopConfig(
     typeof config.mcpServers === "object" && config.mcpServers !== null
       ? (config.mcpServers as Record<string, unknown>)
       : {};
-  servers[context.serverName] = snippetObject;
+  servers[context.serverName] = entry;
   config.mcpServers = servers;
 
   await fsp.mkdir(path.dirname(configPath), { recursive: true });
@@ -95,23 +96,23 @@ export async function applyClaudeDesktopConfig(
   };
 }
 
+function buildClaudeDesktopConfig(context: SetupRenderContext) {
+  return {
+    mcpServers: {
+      [context.serverName]: buildDesktopEntry(context),
+    },
+  };
+}
+
 function buildDesktopEntry(context: SetupRenderContext) {
   const entry: {
     command: string;
     args: string[];
-    cwd?: string;
-    metadata: { description: string };
     env?: Record<string, string>;
   } = {
     command: context.launchCommand.command,
     args: context.launchCommand.args,
-    metadata: {
-      description: "SignWell MCP server",
-    },
   };
-  if (context.isLocalDev) {
-    entry.cwd = context.repositoryPath;
-  }
   if (context.environment && Object.keys(context.environment).length > 0) {
     entry.env = context.environment;
   }
