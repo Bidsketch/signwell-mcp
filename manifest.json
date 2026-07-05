@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "signwell",
   "display_name": "SignWell",
-  "description": "Model Context Protocol server that orchestrates SignWell's e-signature workflows — create, send, track, and manage documents and templates.",
+  "description": "Model Context Protocol server that orchestrates SignWell's e-signature workflows \u2014 create, send, track, and manage documents and templates.",
   "version": "0.3.3",
   "author": {
     "name": "SignWell",
@@ -17,36 +17,1541 @@
   "support": "https://github.com/Bidsketch/signwell-mcp/issues",
   "license": "MIT",
   "icon": "icon.png",
-  "keywords": ["e-signature", "esignature", "signing", "documents", "templates", "contracts"],
+  "keywords": [
+    "e-signature",
+    "esignature",
+    "signing",
+    "documents",
+    "templates",
+    "contracts"
+  ],
   "server": {
     "type": "node",
     "entry_point": "build/index.js",
     "mcp_config": {
       "command": "node",
-      "args": ["${__dirname}/build/index.js"],
+      "args": [
+        "${__dirname}/build/index.js"
+      ],
       "env": {
         "SIGNWELL_API_KEY": "${user_config.api_key}"
       }
     }
   },
   "tools": [
-    { "name": "document_create", "description": "Create a SignWell document draft for e-signature" },
-    { "name": "document_list", "description": "List SignWell documents with filters and pagination" },
-    { "name": "document_get", "description": "Fetch a SignWell document by ID" },
-    { "name": "document_send_draft", "description": "Send a draft document for signing" },
-    { "name": "document_send_reminder", "description": "Send a signing reminder to recipients" },
-    { "name": "document_completed_pdf", "description": "Download the completed signed PDF" },
-    { "name": "template_create", "description": "Create a reusable SignWell template" },
-    { "name": "template_update", "description": "Update an existing SignWell template" },
-    { "name": "template_get", "description": "Fetch a SignWell template by ID" },
-    { "name": "template_list", "description": "List SignWell templates with pagination" },
-    { "name": "template_delete", "description": "Delete a SignWell template" },
-    { "name": "template_create_document", "description": "Create and send a document from a template" },
-    { "name": "file_store", "description": "Store a file in memory for use with document or template creation" },
-    { "name": "file_validate_text_tags", "description": "Validate text tag placeholders in a PDF file" }
+    {
+      "name": "document_create",
+      "description": "Create a SignWell document draft for e-signature",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "recipients": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "email": {
+                  "type": "string",
+                  "format": "email",
+                  "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                },
+                "first_name": {
+                  "type": "string"
+                },
+                "last_name": {
+                  "type": "string"
+                },
+                "role": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "email"
+              ]
+            }
+          },
+          "files": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "file_token": {
+                  "description": "Token from file_store (recommended). Use file_store first, then pass the token here.",
+                  "type": "string"
+                },
+                "file_url": {
+                  "type": "string",
+                  "format": "uri"
+                },
+                "file_base64": {
+                  "type": "string"
+                },
+                "resource_uri": {
+                  "type": "string"
+                },
+                "content_text": {
+                  "description": "Plain text or Markdown content to convert to DOCX. When provided, the MCP server generates a DOCX file automatically. Use this instead of file_base64 to avoid UI freezing with large documents.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ]
+            }
+          },
+          "subject": {
+            "description": "Email subject line recipients will see.",
+            "type": "string"
+          },
+          "message": {
+            "description": "Email message recipients will see.",
+            "type": "string"
+          },
+          "text_tags": {
+            "type": "boolean"
+          },
+          "apply_signing_order": {
+            "description": "When true, recipients sign one at a time in the order of the recipients array.",
+            "default": false,
+            "type": "boolean"
+          },
+          "copied_contacts": {
+            "description": "CC recipients who receive the final signed document by email.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "string",
+                  "format": "email",
+                  "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                },
+                "name": {
+                  "description": "Name of the CC recipient.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "email"
+              ]
+            }
+          },
+          "expires_in": {
+            "description": "Days before the signature request expires (max 365).",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 365
+          },
+          "reminders": {
+            "description": "Send signing reminders on day 3, 6, and 10.",
+            "default": true,
+            "type": "boolean"
+          },
+          "allow_decline": {
+            "description": "Allow recipients to decline signing.",
+            "default": true,
+            "type": "boolean"
+          },
+          "allow_reassign": {
+            "description": "Allow recipients to reassign to someone else.",
+            "default": true,
+            "type": "boolean"
+          },
+          "redirect_url": {
+            "description": "URL to redirect after successful signing.",
+            "type": "string",
+            "format": "uri"
+          },
+          "decline_redirect_url": {
+            "description": "URL to redirect if document is declined.",
+            "type": "string",
+            "format": "uri"
+          },
+          "metadata": {
+            "description": "Key-value metadata (max 50 pairs, key max 40 chars, value max 500 chars).",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "embedded_signing": {
+            "description": "Enable embedded signing.",
+            "default": false,
+            "type": "boolean"
+          },
+          "embedded_signing_notifications": {
+            "description": "Send completion notifications when using embedded signing.",
+            "default": false,
+            "type": "boolean"
+          },
+          "custom_requester_name": {
+            "description": "Custom requester name on communications.",
+            "type": "string"
+          },
+          "custom_requester_email": {
+            "description": "Custom requester email on communications.",
+            "type": "string",
+            "format": "email",
+            "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+          }
+        },
+        "required": [
+          "name",
+          "recipients",
+          "files"
+        ]
+      }
+    },
+    {
+      "name": "document_list",
+      "description": "List SignWell documents with filters and pagination",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "minLength": 1
+          },
+          "search": {
+            "type": "string",
+            "minLength": 1
+          },
+          "archived": {
+            "type": "boolean"
+          },
+          "page": {
+            "default": 1,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "per_page": {
+            "default": 25,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "updated_after": {
+            "type": "string",
+            "minLength": 1
+          },
+          "updated_before": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "document_get",
+      "description": "Fetch a SignWell document by ID",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      }
+    },
+    {
+      "name": "document_send_draft",
+      "description": "Send a draft document for signing",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confirm_send": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      }
+    },
+    {
+      "name": "document_send_reminder",
+      "description": "Send a signing reminder to recipients",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "recipient_email": {
+            "type": "string",
+            "format": "email",
+            "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      }
+    },
+    {
+      "name": "document_completed_pdf",
+      "description": "Download the completed signed PDF",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mode": {
+            "default": "url",
+            "type": "string",
+            "enum": [
+              "url",
+              "base64",
+              "file"
+            ]
+          },
+          "save_to_path": {
+            "type": "string"
+          },
+          "include_audit_page": {
+            "default": true,
+            "type": "boolean"
+          },
+          "file_format": {
+            "default": "pdf",
+            "type": "string",
+            "enum": [
+              "pdf",
+              "zip"
+            ]
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      }
+    },
+    {
+      "name": "template_create",
+      "description": "Create a reusable SignWell template",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "files": {
+            "description": "REQUIRED. Files to upload. Each needs 'name' plus one of: 'file_url', 'file_base64', or 'resource_uri'.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "REQUIRED. Filename with extension (e.g., 'contract.pdf')."
+                },
+                "file_token": {
+                  "description": "Token from file_store (recommended). Use file_store first, then pass the token here.",
+                  "type": "string"
+                },
+                "file_url": {
+                  "description": "Public URL to download the file.",
+                  "type": "string"
+                },
+                "file_base64": {
+                  "description": "Base64-encoded file content.",
+                  "type": "string"
+                },
+                "resource_uri": {
+                  "description": "MCP resource URI for the file.",
+                  "type": "string"
+                },
+                "content_text": {
+                  "description": "Plain text or Markdown content to convert to DOCX. When provided, the MCP server generates a DOCX file automatically. Use this instead of file_base64 to avoid UI freezing with large documents.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ]
+            }
+          },
+          "placeholders": {
+            "description": "REQUIRED. Signing roles. Each needs 'id' and 'name'. For text tags, the 'id' must match tag IDs (e.g., id='signer1' matches [sig|req|signer1]).",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "REQUIRED. Unique ID that maps to the signer number in text tags (e.g., '1' for {{signature:1:y}}, '2' for {{signature:2:y}})."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "REQUIRED. Role name (e.g., 'Parent/Guardian', 'Client'). Used when assigning recipients via template_create_document."
+                },
+                "preassigned_recipient_name": {
+                  "description": "Pre-assigned recipient name.",
+                  "type": "string"
+                },
+                "preassigned_recipient_email": {
+                  "description": "Pre-assigned recipient email.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ]
+            }
+          },
+          "text_tags": {
+            "description": "Set TRUE if PDF contains text tags like {{signature:1:y}}. Placeholder 'id' values must match the signer numbers in tags (e.g., id='1' for {{signature:1:y}}).",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "Template name (e.g., 'Permission Slip').",
+            "type": "string"
+          },
+          "subject": {
+            "description": "Email subject for signature requests.",
+            "type": "string"
+          },
+          "message": {
+            "description": "Email message for signature requests (max 4000 chars).",
+            "type": "string"
+          },
+          "draft": {
+            "description": "If true, template stays editable. If false, marked Available. Default: false per API.",
+            "type": "boolean"
+          },
+          "copied_placeholders": {
+            "description": "Recipients who receive the final document after completion.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "REQUIRED. Name for the CC recipient role."
+                },
+                "preassigned_recipient_name": {
+                  "description": "Pre-assigned name.",
+                  "type": "string"
+                },
+                "preassigned_recipient_email": {
+                  "description": "Pre-assigned email.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ]
+            }
+          },
+          "fields": {
+            "description": "2D array of fields: one array per file. Required if draft is false.",
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "number",
+                    "description": "Horizontal position in pixels."
+                  },
+                  "y": {
+                    "type": "number",
+                    "description": "Vertical position in pixels."
+                  },
+                  "page": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991,
+                    "description": "Page number within the file."
+                  },
+                  "placeholder_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "ID of the placeholder assigned to this field."
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "initials",
+                      "signature",
+                      "checkbox",
+                      "date",
+                      "select",
+                      "text",
+                      "dropdown",
+                      "autofill_company",
+                      "autofill_email",
+                      "autofill_first_name",
+                      "autofill_last_name",
+                      "autofill_name",
+                      "autofill_phone",
+                      "autofill_title",
+                      "autofill_date_signed"
+                    ],
+                    "description": "Field type."
+                  },
+                  "required": {
+                    "default": true,
+                    "type": "boolean"
+                  },
+                  "label": {
+                    "description": "Label displayed when field is empty (text/date fields).",
+                    "type": "string"
+                  },
+                  "value": {
+                    "description": "Pre-filled value. Text accepts strings/numbers, date accepts ISO8601, checkbox accepts boolean.",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
+                  },
+                  "api_id": {
+                    "description": "Unique identifier for the field.",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "Checkbox group name.",
+                    "type": "string"
+                  },
+                  "validation": {
+                    "description": "Text field validation type.",
+                    "type": "string",
+                    "enum": [
+                      "no_text_validation",
+                      "numbers",
+                      "letters",
+                      "email_address",
+                      "us_phone_number",
+                      "us_zip_code",
+                      "us_ssn",
+                      "us_age",
+                      "alphanumeric",
+                      "us_bank_routing_number",
+                      "us_bank_account_number"
+                    ]
+                  },
+                  "fixed_width": {
+                    "description": "Text fields: keep fixed width with multiline.",
+                    "type": "boolean"
+                  },
+                  "lock_sign_date": {
+                    "description": "Date fields: auto-populate with sign date.",
+                    "type": "boolean"
+                  },
+                  "date_format": {
+                    "description": "Date field format.",
+                    "type": "string",
+                    "enum": [
+                      "MM/DD/YYYY",
+                      "DD/MM/YYYY",
+                      "YYYY/MM/DD",
+                      "Month DD, YYYY",
+                      "MM/DD/YYYY hh:mm:ss a"
+                    ]
+                  },
+                  "height": {
+                    "description": "Field height in pixels.",
+                    "type": "number"
+                  },
+                  "width": {
+                    "description": "Field width in pixels.",
+                    "type": "number"
+                  },
+                  "options": {
+                    "description": "Dropdown options.",
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "description": "Option display text."
+                        },
+                        "api_id": {
+                          "description": "Unique ID for the option.",
+                          "type": "string"
+                        },
+                        "is_other": {
+                          "description": "Whether this is an 'Other' option.",
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ]
+                    }
+                  },
+                  "default_option": {
+                    "description": "Default dropdown option.",
+                    "type": "string"
+                  },
+                  "allow_other": {
+                    "description": "Allow 'Other' option in dropdown.",
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y",
+                  "page",
+                  "placeholder_id",
+                  "type"
+                ]
+              }
+            }
+          },
+          "attachment_requests": {
+            "description": "Attachments recipients must upload.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "placeholder_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "required": {
+                  "default": true,
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "name",
+                "placeholder_id"
+              ]
+            }
+          },
+          "checkbox_groups": {
+            "description": "Grouped checkbox fields with validation.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "group_name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "placeholder_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "checkbox_ids": {
+                  "minItems": 2,
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "validation": {
+                  "type": "string",
+                  "enum": [
+                    "minimum",
+                    "maximum",
+                    "range",
+                    "exact"
+                  ]
+                },
+                "required": {
+                  "default": false,
+                  "type": "boolean"
+                },
+                "min_value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "max_value": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "exact_value": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "group_name",
+                "placeholder_id",
+                "checkbox_ids"
+              ]
+            }
+          },
+          "labels": {
+            "description": "Labels for organizing templates.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "name"
+              ]
+            }
+          },
+          "expires_in": {
+            "description": "Days before signature request expires (max 365).",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 365
+          },
+          "reminders": {
+            "description": "Send signing reminders on day 3, 6, and 10.",
+            "type": "boolean"
+          },
+          "apply_signing_order": {
+            "description": "Recipients sign in order.",
+            "type": "boolean"
+          },
+          "redirect_url": {
+            "description": "URL to redirect after successful signing.",
+            "type": "string",
+            "format": "uri"
+          },
+          "decline_redirect_url": {
+            "description": "URL to redirect if document is declined.",
+            "type": "string",
+            "format": "uri"
+          },
+          "allow_decline": {
+            "description": "Allow recipients to decline signing.",
+            "type": "boolean"
+          },
+          "allow_reassign": {
+            "description": "Allow recipients to reassign to someone else.",
+            "type": "boolean"
+          },
+          "language": {
+            "description": "Language for template (ISO 639-1).",
+            "type": "string",
+            "enum": [
+              "en",
+              "fr",
+              "es",
+              "de",
+              "pl",
+              "pt",
+              "da",
+              "nl",
+              "it",
+              "ru",
+              "sv",
+              "ar",
+              "el",
+              "tr",
+              "sk"
+            ]
+          },
+          "metadata": {
+            "description": "Key-value metadata (max 50 pairs, key max 40 chars, value max 500 chars).",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "api_application_id": {
+            "description": "API Application ID for settings isolation.",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        }
+      }
+    },
+    {
+      "name": "template_update",
+      "description": "Update an existing SignWell template",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "REQUIRED. Filename with extension (e.g., 'contract.pdf')."
+                },
+                "file_token": {
+                  "description": "Token from file_store (recommended). Use file_store first, then pass the token here.",
+                  "type": "string"
+                },
+                "file_url": {
+                  "description": "Public URL to download the file.",
+                  "type": "string"
+                },
+                "file_base64": {
+                  "description": "Base64-encoded file content.",
+                  "type": "string"
+                },
+                "resource_uri": {
+                  "description": "MCP resource URI for the file.",
+                  "type": "string"
+                },
+                "content_text": {
+                  "description": "Plain text or Markdown content to convert to DOCX. When provided, the MCP server generates a DOCX file automatically. Use this instead of file_base64 to avoid UI freezing with large documents.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ]
+            }
+          },
+          "placeholders": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "REQUIRED. Unique ID that maps to the signer number in text tags (e.g., '1' for {{signature:1:y}}, '2' for {{signature:2:y}})."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "REQUIRED. Role name (e.g., 'Parent/Guardian', 'Client'). Used when assigning recipients via template_create_document."
+                },
+                "preassigned_recipient_name": {
+                  "description": "Pre-assigned recipient name.",
+                  "type": "string"
+                },
+                "preassigned_recipient_email": {
+                  "description": "Pre-assigned recipient email.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ]
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "draft": {
+            "type": "boolean"
+          },
+          "copied_placeholders": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "REQUIRED. Name for the CC recipient role."
+                },
+                "preassigned_recipient_name": {
+                  "description": "Pre-assigned name.",
+                  "type": "string"
+                },
+                "preassigned_recipient_email": {
+                  "description": "Pre-assigned email.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ]
+            }
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "number",
+                    "description": "Horizontal position in pixels."
+                  },
+                  "y": {
+                    "type": "number",
+                    "description": "Vertical position in pixels."
+                  },
+                  "page": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991,
+                    "description": "Page number within the file."
+                  },
+                  "placeholder_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "ID of the placeholder assigned to this field."
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "initials",
+                      "signature",
+                      "checkbox",
+                      "date",
+                      "select",
+                      "text",
+                      "dropdown",
+                      "autofill_company",
+                      "autofill_email",
+                      "autofill_first_name",
+                      "autofill_last_name",
+                      "autofill_name",
+                      "autofill_phone",
+                      "autofill_title",
+                      "autofill_date_signed"
+                    ],
+                    "description": "Field type."
+                  },
+                  "required": {
+                    "default": true,
+                    "type": "boolean"
+                  },
+                  "label": {
+                    "description": "Label displayed when field is empty (text/date fields).",
+                    "type": "string"
+                  },
+                  "value": {
+                    "description": "Pre-filled value. Text accepts strings/numbers, date accepts ISO8601, checkbox accepts boolean.",
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
+                  },
+                  "api_id": {
+                    "description": "Unique identifier for the field.",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "Checkbox group name.",
+                    "type": "string"
+                  },
+                  "validation": {
+                    "description": "Text field validation type.",
+                    "type": "string",
+                    "enum": [
+                      "no_text_validation",
+                      "numbers",
+                      "letters",
+                      "email_address",
+                      "us_phone_number",
+                      "us_zip_code",
+                      "us_ssn",
+                      "us_age",
+                      "alphanumeric",
+                      "us_bank_routing_number",
+                      "us_bank_account_number"
+                    ]
+                  },
+                  "fixed_width": {
+                    "description": "Text fields: keep fixed width with multiline.",
+                    "type": "boolean"
+                  },
+                  "lock_sign_date": {
+                    "description": "Date fields: auto-populate with sign date.",
+                    "type": "boolean"
+                  },
+                  "date_format": {
+                    "description": "Date field format.",
+                    "type": "string",
+                    "enum": [
+                      "MM/DD/YYYY",
+                      "DD/MM/YYYY",
+                      "YYYY/MM/DD",
+                      "Month DD, YYYY",
+                      "MM/DD/YYYY hh:mm:ss a"
+                    ]
+                  },
+                  "height": {
+                    "description": "Field height in pixels.",
+                    "type": "number"
+                  },
+                  "width": {
+                    "description": "Field width in pixels.",
+                    "type": "number"
+                  },
+                  "options": {
+                    "description": "Dropdown options.",
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "description": "Option display text."
+                        },
+                        "api_id": {
+                          "description": "Unique ID for the option.",
+                          "type": "string"
+                        },
+                        "is_other": {
+                          "description": "Whether this is an 'Other' option.",
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "name"
+                      ]
+                    }
+                  },
+                  "default_option": {
+                    "description": "Default dropdown option.",
+                    "type": "string"
+                  },
+                  "allow_other": {
+                    "description": "Allow 'Other' option in dropdown.",
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y",
+                  "page",
+                  "placeholder_id",
+                  "type"
+                ]
+              }
+            }
+          },
+          "attachment_requests": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "placeholder_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "required": {
+                  "default": true,
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "name",
+                "placeholder_id"
+              ]
+            }
+          },
+          "checkbox_groups": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "group_name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "placeholder_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "checkbox_ids": {
+                  "minItems": 2,
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "validation": {
+                  "type": "string",
+                  "enum": [
+                    "minimum",
+                    "maximum",
+                    "range",
+                    "exact"
+                  ]
+                },
+                "required": {
+                  "default": false,
+                  "type": "boolean"
+                },
+                "min_value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "max_value": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "exact_value": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "group_name",
+                "placeholder_id",
+                "checkbox_ids"
+              ]
+            }
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "name"
+              ]
+            }
+          },
+          "expires_in": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 365
+          },
+          "reminders": {
+            "type": "boolean"
+          },
+          "apply_signing_order": {
+            "type": "boolean"
+          },
+          "redirect_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "decline_redirect_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "allow_decline": {
+            "type": "boolean"
+          },
+          "allow_reassign": {
+            "type": "boolean"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "en",
+              "fr",
+              "es",
+              "de",
+              "pl",
+              "pt",
+              "da",
+              "nl",
+              "it",
+              "ru",
+              "sv",
+              "ar",
+              "el",
+              "tr",
+              "sk"
+            ]
+          },
+          "text_tags": {
+            "type": "boolean"
+          },
+          "metadata": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "api_application_id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "template_id"
+        ]
+      }
+    },
+    {
+      "name": "template_get",
+      "description": "Fetch a SignWell template by ID",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "template_id"
+        ]
+      }
+    },
+    {
+      "name": "template_list",
+      "description": "List SignWell templates with pagination",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "default": 1,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "per_page": {
+            "default": 25,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      }
+    },
+    {
+      "name": "template_delete",
+      "description": "Delete a SignWell template",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "template_id"
+        ]
+      }
+    },
+    {
+      "name": "template_create_document",
+      "description": "Create and send a document from a template",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "description": "Document name override.",
+            "type": "string"
+          },
+          "recipients": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Unique identifier for this recipient (e.g., 'recipient_1')."
+                },
+                "placeholder_name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The name of the placeholder from the template to assign this recipient to."
+                },
+                "email": {
+                  "type": "string",
+                  "format": "email",
+                  "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                },
+                "name": {
+                  "description": "Name of the recipient.",
+                  "type": "string"
+                },
+                "passcode": {
+                  "description": "Passcode required to view and sign the document.",
+                  "type": "string"
+                },
+                "subject": {
+                  "description": "Custom email subject for this recipient.",
+                  "type": "string"
+                },
+                "message": {
+                  "description": "Custom email message for this recipient.",
+                  "type": "string"
+                },
+                "send_email": {
+                  "description": "Only valid when embedded_signing is true. Whether to send email notification.",
+                  "type": "boolean"
+                },
+                "send_email_delay": {
+                  "description": "Only valid when embedded_signing is true. Delay in minutes before sending email (0-60).",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 60
+                }
+              },
+              "required": [
+                "id",
+                "placeholder_name",
+                "email"
+              ]
+            }
+          },
+          "copied_contacts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "copied_placeholder_id": {
+                  "type": "string"
+                },
+                "email": {
+                  "type": "string",
+                  "format": "email",
+                  "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "email"
+              ]
+            }
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "subject": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "draft": {
+            "default": false,
+            "type": "boolean"
+          },
+          "embedded_signing": {
+            "default": false,
+            "type": "boolean"
+          },
+          "embedded_signing_notifications": {
+            "default": false,
+            "type": "boolean"
+          },
+          "text_tags": {
+            "default": false,
+            "type": "boolean"
+          },
+          "apply_signing_order": {
+            "description": "When true, recipients sign one at a time in the order of the recipients array.",
+            "default": false,
+            "type": "boolean"
+          },
+          "custom_requester_name": {
+            "type": "string"
+          },
+          "custom_requester_email": {
+            "type": "string",
+            "format": "email",
+            "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+          },
+          "redirect_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "decline_redirect_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "expires_in": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 365
+          },
+          "files": {
+            "description": "Additional files to append.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "REQUIRED. Filename with extension (e.g., 'contract.pdf')."
+                },
+                "file_token": {
+                  "description": "Token from file_store (recommended). Use file_store first, then pass the token here.",
+                  "type": "string"
+                },
+                "file_url": {
+                  "description": "Public URL to download the file.",
+                  "type": "string"
+                },
+                "file_base64": {
+                  "description": "Base64-encoded file content.",
+                  "type": "string"
+                },
+                "resource_uri": {
+                  "description": "MCP resource URI for the file.",
+                  "type": "string"
+                },
+                "content_text": {
+                  "description": "Plain text or Markdown content to convert to DOCX. When provided, the MCP server generates a DOCX file automatically. Use this instead of file_base64 to avoid UI freezing with large documents.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ]
+            }
+          }
+        },
+        "required": [
+          "template_id",
+          "recipients"
+        ]
+      }
+    },
+    {
+      "name": "file_store",
+      "description": "Store a file in memory for use with document or template creation",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "resource_uri": {
+            "type": "string"
+          },
+          "file_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "file_path": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "file_validate_text_tags",
+      "description": "Validate text tag placeholders in a PDF file",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "file_token": {
+            "description": "Token from file_store.",
+            "type": "string"
+          },
+          "file_base64": {
+            "description": "Base64-encoded PDF content.",
+            "type": "string"
+          },
+          "file_url": {
+            "description": "Public URL to download the PDF.",
+            "type": "string",
+            "format": "uri"
+          },
+          "resource_uri": {
+            "description": "MCP resource URI for the file.",
+            "type": "string"
+          },
+          "use_picker": {
+            "description": "Set to true to prompt for a local file when no other option is provided.",
+            "type": "boolean"
+          }
+        }
+      }
+    }
   ],
   "compatibility": {
-    "platforms": ["darwin", "win32", "linux"],
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
     "runtimes": {
       "node": ">=18.0.0"
     }
