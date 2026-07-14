@@ -1,12 +1,16 @@
 import { Buffer } from "node:buffer";
 import { describe, expect, test } from "bun:test";
 
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 import { SignWellError } from "../src/signwell/errors.ts";
 import { registerDocumentTools } from "../src/tools/documents.ts";
 import { putStoredFileForTests } from "../src/tools/files.ts";
+
+const API_APPLICATION_ID = "123e4567-e89b-12d3-a456-426614174000";
 
 interface MockCall {
   method: "get" | "post" | "buffer";
@@ -77,6 +81,30 @@ function parseResult(result: CallToolResult) {
   return JSON.parse(text) as Record<string, unknown>;
 }
 
+function getWarnings(payload: Record<string, unknown>): string[] {
+  return Array.isArray(payload.warnings) ? (payload.warnings as string[]) : [];
+}
+
+async function setupMcpSurface() {
+  const server = new McpServer({ name: "signwell-test", version: "0.0.0" });
+  const client = new MockClient();
+  registerDocumentTools(server, client as never);
+
+  const mcpClient = new Client({ name: "signwell-test-client", version: "0.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await server.connect(serverTransport);
+  await mcpClient.connect(clientTransport);
+
+  return {
+    client,
+    mcpClient,
+    async close() {
+      await mcpClient.close();
+      await server.close();
+    },
+  };
+}
+
 describe("registerDocumentTools", () => {
   test("registers all document tools", () => {
     const { count, handlers } = setupTools();
@@ -103,6 +131,7 @@ describe("registerDocumentTools", () => {
       name: "Agreement",
       recipients: [{ id: "1", email: "a@example.com" }],
       files: [{ name: "doc.pdf", file_url: "https://example.com/1.pdf" }],
+      draft: false,
     });
 
     expect(client.calls).toHaveLength(1);
@@ -111,11 +140,15 @@ describe("registerDocumentTools", () => {
       path: "/documents",
     });
     expect(client.calls[0]?.body).toMatchObject({ draft: true });
+    expect(client.calls[0]?.body as Record<string, unknown>).not.toHaveProperty(
+      "api_application_id",
+    );
 
     const payload = parseResult(result);
     expect(payload.ok).toBe(true);
     expect(payload.type).toBe("document_create");
     expect(payload.message).toBe("Document draft created.");
+    expect(payload.warnings).toBeUndefined();
   });
 
   test("create tool accepts html file types supported by SignWell API", async () => {
@@ -183,7 +216,9 @@ describe("registerDocumentTools", () => {
       "https://www.signwell.com/app/builder/doc-123",
     );
     expect(payload.message).toContain("editor link");
-    expect(payload.warnings?.[0]).toContain("editor_url");
+    const warnings = getWarnings(payload);
+    expect(warnings.some((warning) => warning.includes("editor_url"))).toBe(true);
+    expect(warnings.some((warning) => warning.includes("document_get"))).toBe(true);
   });
 
   test("create tool resolves resource_uri into base64", async () => {
@@ -302,6 +337,66 @@ describe("registerDocumentTools", () => {
     });
   });
 
+  test("create tool warns that text tag parsing is asynchronous", async () => {
+    const { handlers } = setupTools();
+    const handler = handlers.get("document_create");
+    if (!handler) {
+      throw new Error("handler missing");
+    }
+
+    const result = await handler({
+      name: "Agreement",
+      recipients: [{ id: "1", email: "a@example.com" }],
+      files: [{ name: "doc.pdf", file_url: "https://example.com/1.pdf" }],
+      text_tags: true,
+    });
+
+    const payload = parseResult(result);
+    expect(payload.ok).toBe(true);
+    const warnings = getWarnings(payload);
+    expect(warnings.some((warning) => warning.includes("document_get"))).toBe(true);
+    expect(warnings.some((warning) => warning.includes("fields: []"))).toBe(true);
+    expect(warnings.some((warning) => warning.includes("pages_number: 0"))).toBe(true);
+  });
+
+  test("create tool forwards api_application_id in the documented body field", async () => {
+    const { handlers, client } = setupTools();
+    const handler = handlers.get("document_create");
+    if (!handler) {
+      throw new Error("handler missing");
+    }
+
+    await handler({
+      name: "Agreement",
+      recipients: [{ id: "1", email: "a@example.com" }],
+      files: [{ name: "doc.pdf", file_url: "https://example.com/1.pdf" }],
+      api_application_id: API_APPLICATION_ID,
+    });
+
+    expect(client.calls[0]?.body).toMatchObject({
+      api_application_id: API_APPLICATION_ID,
+      draft: true,
+    });
+  });
+
+  test("create tool rejects invalid api_application_id before client call", async () => {
+    const { handlers, client } = setupTools();
+    const handler = handlers.get("document_create");
+    if (!handler) {
+      throw new Error("handler missing");
+    }
+
+    await expect(
+      handler({
+        name: "Agreement",
+        recipients: [{ id: "1", email: "a@example.com" }],
+        files: [{ name: "doc.pdf", file_url: "https://example.com/1.pdf" }],
+        api_application_id: "not-a-uuid",
+      }),
+    ).rejects.toThrow();
+    expect(client.calls).toHaveLength(0);
+  });
+
   test("list tool forwards query params", async () => {
     const { handlers, client } = setupTools();
     const handler = handlers.get("document_list");
@@ -324,6 +419,7 @@ describe("registerDocumentTools", () => {
       page: 2,
       per_page: 10,
       search: "Q4",
+      api_application_id: API_APPLICATION_ID,
     });
 
     const call = client.calls.find((c) => c.method === "get" && c.path === "/documents");
@@ -336,6 +432,7 @@ describe("registerDocumentTools", () => {
         search: "Q4",
       },
     });
+    expect((call?.options?.query as Record<string, unknown>).api_application_id).toBeUndefined();
 
     const payload = parseResult(result);
     expect(payload.ok).toBe(true);
@@ -405,6 +502,50 @@ describe("registerDocumentTools", () => {
     expect(payload.type).toBe("document_send_draft");
   });
 
+  test("send draft forwards api_application_id in the documented body field", async () => {
+    const { handlers, client } = setupTools();
+    const handler = handlers.get("document_send_draft");
+    if (!handler) {
+      throw new Error("handler missing");
+    }
+
+    const result = await handler({
+      document_id: "doc_123",
+      confirm_send: true,
+      message: "Please sign this document.",
+      api_application_id: API_APPLICATION_ID,
+    });
+
+    expect(client.calls).toHaveLength(1);
+    expect(client.calls[0]).toMatchObject({
+      method: "post",
+      path: "/documents/doc_123/send",
+      body: {
+        message: "Please sign this document.",
+        api_application_id: API_APPLICATION_ID,
+      },
+    });
+    const payload = parseResult(result);
+    expect(payload.ok).toBe(true);
+  });
+
+  test("send draft rejects invalid api_application_id before client call", async () => {
+    const { handlers, client } = setupTools();
+    const handler = handlers.get("document_send_draft");
+    if (!handler) {
+      throw new Error("handler missing");
+    }
+
+    await expect(
+      handler({
+        document_id: "doc_123",
+        confirm_send: true,
+        api_application_id: "not-a-uuid",
+      }),
+    ).rejects.toThrow();
+    expect(client.calls).toHaveLength(0);
+  });
+
   test("send draft rejects invalid stringified confirm flag", async () => {
     const { handlers, client } = setupTools();
     const handler = handlers.get("document_send_draft");
@@ -430,12 +571,40 @@ describe("registerDocumentTools", () => {
 
     const result = await handler({
       document_id: "doc_1",
+      api_application_id: API_APPLICATION_ID,
     });
 
     const payload = parseResult(result);
     expect(payload.ok).toBe(true);
     expect(payload.type).toBe("document_get");
     expect(payload.data).toMatchObject({ path: "/documents/doc_1" });
+  });
+
+  test("send reminder does not support api_application_id passthrough", async () => {
+    const { handlers, client } = setupTools();
+    const handler = handlers.get("document_send_reminder");
+    if (!handler) {
+      throw new Error("handler missing");
+    }
+
+    await handler({
+      document_id: "doc_123",
+      recipient_email: "a@example.com",
+      message: "Please sign.",
+      api_application_id: API_APPLICATION_ID,
+    });
+
+    expect(client.calls[0]).toMatchObject({
+      method: "post",
+      path: "/documents/doc_123/remind",
+      body: {
+        recipient_email: "a@example.com",
+        message: "Please sign.",
+      },
+    });
+    expect(client.calls[0]?.body as Record<string, unknown>).not.toHaveProperty(
+      "api_application_id",
+    );
   });
 
   test("completed_pdf defaults to URL mode", async () => {
@@ -448,6 +617,7 @@ describe("registerDocumentTools", () => {
 
     const result = await handler({
       document_id: "doc_pdf",
+      api_application_id: API_APPLICATION_ID,
     });
 
     const payload = parseResult(result);
@@ -459,6 +629,7 @@ describe("registerDocumentTools", () => {
     expect(call?.options).toMatchObject({
       query: { url_only: true, audit_page: true, file_format: "pdf" },
     });
+    expect((call?.options?.query as Record<string, unknown>).api_application_id).toBeUndefined();
   });
 
   test("completed_pdf base64 mode emits warnings for large payloads", async () => {
@@ -474,6 +645,7 @@ describe("registerDocumentTools", () => {
       mode: "base64",
       include_audit_page: false,
       file_format: "zip",
+      api_application_id: API_APPLICATION_ID,
     });
 
     const payload = parseResult(result);
@@ -486,6 +658,7 @@ describe("registerDocumentTools", () => {
     expect(call?.options).toMatchObject({
       query: { url_only: false, audit_page: false, file_format: "zip" },
     });
+    expect((call?.options?.query as Record<string, unknown>).api_application_id).toBeUndefined();
   });
 
   test("completed_pdf url mode errors when file_url missing", async () => {
@@ -577,6 +750,87 @@ describe("registerDocumentTools", () => {
     const payload = parseResult(result);
     expect(payload.type).toBe("auth");
     expect(payload.data).toMatchObject({ requestId: "req_123", status: 401 });
+  });
+
+  test("MCP surface document_create returns warnings and forwards api_application_id", async () => {
+    const surface = await setupMcpSurface();
+    try {
+      const result = await surface.mcpClient.callTool({
+        name: "document_create",
+        arguments: {
+          name: "Agreement",
+          recipients: [{ id: "1", email: "a@example.com" }],
+          files: [{ name: "doc.pdf", file_url: "https://example.com/1.pdf" }],
+          text_tags: true,
+          draft: false,
+          api_application_id: API_APPLICATION_ID,
+        },
+      });
+
+      const payload = parseResult(result as CallToolResult);
+      expect(payload.ok).toBe(true);
+      expect(getWarnings(payload).some((warning) => warning.includes("document_get"))).toBe(true);
+      expect(surface.client.calls[0]).toMatchObject({
+        method: "post",
+        path: "/documents",
+        body: {
+          draft: true,
+          text_tags: true,
+          api_application_id: API_APPLICATION_ID,
+        },
+      });
+    } finally {
+      await surface.close();
+    }
+  });
+
+  test("MCP surface document_send_draft forwards api_application_id", async () => {
+    const surface = await setupMcpSurface();
+    try {
+      const result = await surface.mcpClient.callTool({
+        name: "document_send_draft",
+        arguments: {
+          document_id: "doc_123",
+          confirm_send: true,
+          message: "Please sign this document.",
+          api_application_id: API_APPLICATION_ID,
+        },
+      });
+
+      const payload = parseResult(result as CallToolResult);
+      expect(payload.ok).toBe(true);
+      expect(surface.client.calls[0]).toMatchObject({
+        method: "post",
+        path: "/documents/doc_123/send",
+        body: {
+          message: "Please sign this document.",
+          api_application_id: API_APPLICATION_ID,
+        },
+      });
+    } finally {
+      await surface.close();
+    }
+  });
+
+  test("MCP surface rejects invalid api_application_id before client call", async () => {
+    const surface = await setupMcpSurface();
+    try {
+      const result = (await surface.mcpClient.callTool({
+        name: "document_create",
+        arguments: {
+          name: "Agreement",
+          recipients: [{ id: "1", email: "a@example.com" }],
+          files: [{ name: "doc.pdf", file_url: "https://example.com/1.pdf" }],
+          api_application_id: "not-a-uuid",
+        },
+      })) as CallToolResult;
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain("api_application_id");
+      expect(surface.client.calls).toHaveLength(0);
+    } finally {
+      await surface.close();
+    }
   });
 
   test("document prompt delegates to SignWell client", async () => {
