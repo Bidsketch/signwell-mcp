@@ -2080,6 +2080,7 @@ var copiedContactSchema = z3.object({
   email: z3.string().email({ message: "Copied contact email must be valid." }),
   name: z3.string().optional().describe("Name of the CC recipient.")
 });
+var apiApplicationIdSchema = z3.string().uuid().optional().describe("API Application ID for settings isolation.");
 var createDocumentSchema = z3.object({
   name: z3.string().min(1, { message: "Document name is required." }),
   recipients: z3.array(recipientSchema).min(1, { message: "At least one recipient is required." }),
@@ -2099,7 +2100,8 @@ var createDocumentSchema = z3.object({
   embedded_signing: z3.boolean().default(false).optional().describe("Enable embedded signing."),
   embedded_signing_notifications: z3.boolean().default(false).optional().describe("Send completion notifications when using embedded signing."),
   custom_requester_name: z3.string().optional().describe("Custom requester name on communications."),
-  custom_requester_email: z3.string().email().optional().describe("Custom requester email on communications.")
+  custom_requester_email: z3.string().email().optional().describe("Custom requester email on communications."),
+  api_application_id: apiApplicationIdSchema
 });
 var listDocumentsSchema = z3.object({
   status: z3.string().min(1).optional(),
@@ -2127,7 +2129,8 @@ function parseJsonEncodedString(value) {
 var sendDraftSchema = z3.object({
   document_id: documentIdSchema,
   confirm_send: z3.preprocess(parseJsonEncodedString, z3.boolean()).default(false),
-  message: z3.string().optional()
+  message: z3.string().optional(),
+  api_application_id: apiApplicationIdSchema
 });
 var reminderSchema = z3.object({
   document_id: documentIdSchema,
@@ -2282,7 +2285,8 @@ EXAMPLE (pdf with text tags):
 }
 
 TEXT TAGS (optional): Set text_tags: true only if the document already contains signature placeholders like {{signature:1:y}}.
-The recipient "id" MUST match the number in text tags (id:"1" matches {{signature:1:y}}).`,
+The recipient "id" MUST match the number in text tags (id:"1" matches {{signature:1:y}}).
+ASYNC FIELD PARSING: SignWell may parse text tags after returning the create response. If the immediate response shows fields: [] or pages_number: 0, call document_get after a few seconds before treating the tags as failed.`,
     createDocumentSchema,
     (input2, extra) => handleCreateDocument(client, input2, extra),
     { title: "Create Document", readOnlyHint: false, destructiveHint: false }
@@ -2347,13 +2351,22 @@ async function handleCreateDocument(client, input2, extra) {
     };
     const data = await client.post("/documents", payload);
     const { payload: responsePayload, editorUrl } = attachEditorLink(data);
+    const warnings = [];
+    if (input2.text_tags) {
+      warnings.push(
+        "NOTE: text_tags was enabled. SignWell parses document fields asynchronously after creation. The immediate response may show fields: [] or pages_number: 0; call document_get after a few seconds before treating tags as failed."
+      );
+    }
+    if (editorUrl) {
+      warnings.push(
+        "Assistant: share the editor_url so the user can add or adjust fields directly in SignWell. Do not promise to place fields manually within this chat."
+      );
+    }
     return successResponse({
       type: "document_create",
       message: editorUrl ? "Document draft created. Use the SignWell editor link to position or update fields." : "Document draft created.",
       data: responsePayload,
-      warnings: editorUrl ? [
-        "Assistant: share the editor_url so the user can add or adjust fields directly in SignWell. Do not promise to place fields manually within this chat."
-      ] : void 0
+      warnings: warnings.length ? warnings : void 0
     });
   } catch (error) {
     return toToolError(error, "Unable to create the document.");
@@ -2408,7 +2421,8 @@ async function handleSendDraft(client, input2, _extra) {
   }
   try {
     const payload = {
-      message: input2.message
+      message: input2.message,
+      ...input2.api_application_id && { api_application_id: input2.api_application_id }
     };
     const data = await client.post(`/documents/${input2.document_id}/send`, payload);
     return successResponse({
