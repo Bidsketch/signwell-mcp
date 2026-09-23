@@ -2060,10 +2060,14 @@ async function pickFileUsingNativeDialog(nameOverride) {
 var recipientSchema = z3.object({
   id: z3.string().min(1, { message: "Recipient id is required (e.g. '1')." }),
   email: z3.string().email({ message: "Recipient email must be valid." }),
-  first_name: z3.string().optional(),
-  last_name: z3.string().optional(),
-  role: z3.string().optional()
+  name: z3.string().optional().describe("Full name of the recipient, shown to the signer and on the audit report."),
+  first_name: z3.string().optional().describe("Alternative to name: joined with last_name into name before sending."),
+  last_name: z3.string().optional().describe("Alternative to name: joined with first_name into name before sending.")
 });
+function toApiRecipient({ first_name, last_name, ...recipient }) {
+  const name = recipient.name?.trim() || [first_name, last_name].map((part) => part?.trim()).filter(Boolean).join(" ");
+  return name ? { ...recipient, name } : recipient;
+}
 var fileSchema = z3.object({
   name: z3.string().min(1, { message: "File name is required." }),
   file_token: z3.string().optional().describe(
@@ -2259,7 +2263,7 @@ FILE ACCESS: Chat attachments and sandbox paths (/home/claude, /mnt/user-data) a
 
 REQUIRED PARAMETERS:
 1. name: Document name
-2. recipients: Array with at least one object containing "id" and "email"
+2. recipients: Array with at least one object containing "id" and "email". Always pass the signer's full name in "name" (or "first_name" and "last_name", which are joined into "name"); a recipient without a name is asked to type one when signing.
 3. files: Array with at least one file object containing:
    - "name": Filename (e.g., "contract.docx")
    - One content source (in order of preference):
@@ -2272,7 +2276,7 @@ REQUIRED PARAMETERS:
 EXAMPLE (docx via file_token \u2014 most common):
 {
   "name": "NDA Agreement",
-  "recipients": [{"id": "1", "email": "signer@example.com"}],
+  "recipients": [{"id": "1", "email": "signer@example.com", "name": "Jane Doe"}],
   "files": [{"name": "nda.docx", "file_token": "<token from file_store>"}]
 }
 
@@ -2346,6 +2350,7 @@ async function handleCreateDocument(client, input2, extra) {
     const files = await resolveFileInputs(input2.files, extra);
     const payload = {
       ...input2,
+      recipients: input2.recipients.map(toApiRecipient),
       files,
       draft: true
     };

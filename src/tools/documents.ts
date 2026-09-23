@@ -33,10 +33,32 @@ export interface DocumentListResponse {
 const recipientSchema = z.object({
   id: z.string().min(1, { message: "Recipient id is required (e.g. '1')." }),
   email: z.string().email({ message: "Recipient email must be valid." }),
-  first_name: z.string().optional(),
-  last_name: z.string().optional(),
-  role: z.string().optional(),
+  name: z
+    .string()
+    .optional()
+    .describe("Full name of the recipient, shown to the signer and on the audit report."),
+  first_name: z
+    .string()
+    .optional()
+    .describe("Alternative to name: joined with last_name into name before sending."),
+  last_name: z
+    .string()
+    .optional()
+    .describe("Alternative to name: joined with first_name into name before sending."),
 });
+
+type RecipientInput = z.infer<typeof recipientSchema>;
+
+// The API only reads `name`; it silently drops first_name/last_name.
+function toApiRecipient({ first_name, last_name, ...recipient }: RecipientInput) {
+  const name =
+    recipient.name?.trim() ||
+    [first_name, last_name]
+      .map((part) => part?.trim())
+      .filter(Boolean)
+      .join(" ");
+  return name ? { ...recipient, name } : recipient;
+}
 
 const fileSchema = z.object({
   name: z.string().min(1, { message: "File name is required." }),
@@ -326,7 +348,7 @@ FILE ACCESS: Chat attachments and sandbox paths (/home/claude, /mnt/user-data) a
 
 REQUIRED PARAMETERS:
 1. name: Document name
-2. recipients: Array with at least one object containing "id" and "email"
+2. recipients: Array with at least one object containing "id" and "email". Always pass the signer's full name in "name" (or "first_name" and "last_name", which are joined into "name"); a recipient without a name is asked to type one when signing.
 3. files: Array with at least one file object containing:
    - "name": Filename (e.g., "contract.docx")
    - One content source (in order of preference):
@@ -339,7 +361,7 @@ REQUIRED PARAMETERS:
 EXAMPLE (docx via file_token — most common):
 {
   "name": "NDA Agreement",
-  "recipients": [{"id": "1", "email": "signer@example.com"}],
+  "recipients": [{"id": "1", "email": "signer@example.com", "name": "Jane Doe"}],
   "files": [{"name": "nda.docx", "file_token": "<token from file_store>"}]
 }
 
@@ -433,6 +455,7 @@ async function handleCreateDocument(
     const files = await resolveFileInputs(input.files, extra);
     const payload = {
       ...input,
+      recipients: input.recipients.map(toApiRecipient),
       files,
       draft: true,
     };

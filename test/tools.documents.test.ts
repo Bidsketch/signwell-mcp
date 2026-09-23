@@ -151,6 +151,62 @@ describe("registerDocumentTools", () => {
     expect(payload.warnings).toBeUndefined();
   });
 
+  describe("create tool recipient names", () => {
+    const createWithRecipient = async (recipient: Record<string, unknown>) => {
+      const { handlers, client } = setupTools();
+      const handler = handlers.get("document_create");
+      if (!handler) {
+        throw new Error("handler missing");
+      }
+
+      await handler({
+        name: "Agreement",
+        recipients: [{ id: "1", email: "a@example.com", ...recipient }],
+        files: [{ name: "doc.pdf", file_url: "https://example.com/1.pdf" }],
+      });
+
+      return (client.calls[0]?.body as { recipients: Array<Record<string, unknown>> })
+        .recipients[0];
+    };
+
+    test("forwards name as given", async () => {
+      expect(await createWithRecipient({ name: "Jane Doe" })).toEqual({
+        id: "1",
+        email: "a@example.com",
+        name: "Jane Doe",
+      });
+    });
+
+    test("joins first_name and last_name into name", async () => {
+      expect(await createWithRecipient({ first_name: " Jane ", last_name: "Doe" })).toEqual({
+        id: "1",
+        email: "a@example.com",
+        name: "Jane Doe",
+      });
+    });
+
+    test("uses first_name alone when last_name is missing", async () => {
+      expect(await createWithRecipient({ first_name: "Jane" })).toEqual({
+        id: "1",
+        email: "a@example.com",
+        name: "Jane",
+      });
+    });
+
+    test("prefers name over first_name and last_name", async () => {
+      expect(
+        await createWithRecipient({ name: "Jane Doe", first_name: "J", last_name: "D" }),
+      ).toEqual({ id: "1", email: "a@example.com", name: "Jane Doe" });
+    });
+
+    test("omits name and role when no name is provided", async () => {
+      expect(await createWithRecipient({ first_name: " ", role: "signer" })).toEqual({
+        id: "1",
+        email: "a@example.com",
+      });
+    });
+  });
+
   test("create tool accepts html file types supported by SignWell API", async () => {
     const { handlers, client } = setupTools();
     const handler = handlers.get("document_create");
