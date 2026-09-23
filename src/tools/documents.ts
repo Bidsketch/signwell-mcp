@@ -340,7 +340,7 @@ WORKFLOW FOR CLAUDE-GENERATED FILES:
    Example using content_text:
    {
      "name": "Service Agreement",
-     "recipients": [{"id": "1", "email": "client@example.com"}],
+     "recipients": [{"id": "1", "email": "client@example.com", "name": "Jane Doe"}],
      "files": [{"name": "agreement.docx", "content_text": "# Service Agreement\\n\\nThis agreement between..."}]
    }
 
@@ -369,7 +369,7 @@ EXAMPLE (pdf with text tags):
 {
   "name": "Contract",
   "text_tags": true,
-  "recipients": [{"id": "1", "email": "signer@example.com"}],
+  "recipients": [{"id": "1", "email": "signer@example.com", "name": "Jane Doe"}],
   "files": [{"name": "contract.pdf", "file_token": "<token from file_store>"}]
 }
 

@@ -193,6 +193,20 @@ describe("registerDocumentTools", () => {
       });
     });
 
+    test("trims a padded name", async () => {
+      expect(await createWithRecipient({ name: " Jane Doe " })).toEqual({
+        id: "1",
+        email: "a@example.com",
+        name: "Jane Doe",
+      });
+    });
+
+    test("falls back to first_name and last_name when name is blank", async () => {
+      expect(
+        await createWithRecipient({ name: " ", first_name: "Jane", last_name: "Doe" }),
+      ).toEqual({ id: "1", email: "a@example.com", name: "Jane Doe" });
+    });
+
     test("prefers name over first_name and last_name", async () => {
       expect(
         await createWithRecipient({ name: "Jane Doe", first_name: "J", last_name: "D" }),
