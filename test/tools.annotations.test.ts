@@ -55,8 +55,8 @@ describe("tool annotations", () => {
   registerDocumentTools(serverStub, client as never);
   registerTemplateTools(serverStub, client as never);
 
-  test("all 14 tools are registered", () => {
-    expect(configs.size).toBe(14);
+  test("all 16 tools are registered", () => {
+    expect(configs.size).toBe(16);
   });
 
   test("every tool has annotations", () => {
@@ -85,8 +85,12 @@ describe("tool annotations", () => {
     });
   }
 
-  test("template_delete is destructive", () => {
-    const ann = configs.get("template_delete")?.annotations;
+  test.each([
+    "template_delete",
+    "document_delete",
+    "document_update_recipients",
+  ])("%s is destructive", (name) => {
+    const ann = configs.get(name)?.annotations;
     expect(ann).toBeDefined();
     expect(ann?.destructiveHint).toBe(true);
   });

@@ -19,7 +19,7 @@ type ToolExtra = {
 
 const TAG_PATTERN = /\{\{[^}]*\}\}/g;
 const VALID_TAG_PATTERN =
-  /^\{\{(signature|date|text|initial|initials|checkbox):(\w+):(y|n)(?::([^}]+))?\}\}$/;
+  /^\{\{(signature|date|text|initial|initials|checkbox|autofill_date_signed|af_d_s):(\w+):(y|n)(?::([^}]+))?\}\}$/;
 
 const validateTextTagsSchema = z.object({
   file_token: z.string().optional().describe("Token from file_store."),
@@ -45,6 +45,7 @@ RECOMMENDED WORKFLOW: file_store → file_validate_text_tags → template_create
 Accepts a PDF via file_token (from file_store), file_base64, file_url, or resource_uri.
 Set use_picker: true to open a native file picker when no file input is provided.
 Extracts text from the PDF and checks for valid SignWell text tags like {{signature:1:y}}.
+For locked signing dates, use {{autofill_date_signed:1:y}} or {{date:1:y::::::y}}. Plain {{date:1:y}} is editable.
 
 Returns:
 - Whether text is extractable from the PDF
@@ -133,7 +134,7 @@ async function handleValidateTextTags(
     } else if (malformedTags.length > 0) {
       recommendations.push(
         `Found ${malformedTags.length} malformed tag(s). Valid format: {{type:signer_id:required[:label]}}`,
-        "Supported types: signature, date, text, initial, initials, checkbox",
+        "Supported types: signature, date, text, initial, initials, checkbox, autofill_date_signed (or af_d_s)",
         "Required field: 'y' (required) or 'n' (optional)",
       );
       warnings.push(

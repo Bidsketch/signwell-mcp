@@ -173,6 +173,25 @@ describe("registerValidateTools", () => {
     expect(data.signer_ids).toEqual(["1"]);
   });
 
+  test("accepts locked signing dates without rejecting editable dates", async () => {
+    const { handlers } = setupTools();
+    const tags = [
+      "{{autofill_date_signed:1:y}}",
+      "{{af_d_s:2:y}}",
+      "{{date:2:y::::::y}}",
+      "{{date:1:y}}",
+    ];
+    const result = await handlers.get("file_validate_text_tags")?.({
+      file_base64: Buffer.from(createMinimalPdf(tags.join(" "))).toString("base64"),
+    });
+    const payload = parseResult(result as CallToolResult);
+    expect(payload.data).toMatchObject({
+      valid_tags: tags,
+      malformed_tags: [],
+      signer_ids: ["1", "2"],
+    });
+  });
+
   test("reports malformed tags", async () => {
     const { handlers } = setupTools();
     const handler = handlers.get("file_validate_text_tags");

@@ -109,12 +109,14 @@ describe("registerDocumentTools", () => {
   test("registers all document tools", () => {
     const { count, handlers } = setupTools();
 
-    expect(count).toBe(6);
+    expect(count).toBe(8);
     expect(Array.from(handlers.keys())).toEqual([
       "document_create",
       "document_list",
       "document_get",
       "document_send_draft",
+      "document_update_recipients",
+      "document_delete",
       "document_send_reminder",
       "document_completed_pdf",
     ]);
@@ -561,7 +563,7 @@ describe("registerDocumentTools", () => {
       message: "Please sign this document.",
     });
 
-    expect(client.calls).toHaveLength(1);
+    expect(client.calls).toHaveLength(2);
     expect(client.calls[0]).toMatchObject({
       method: "post",
       path: "/documents/doc_123/send",
@@ -586,7 +588,7 @@ describe("registerDocumentTools", () => {
       api_application_id: API_APPLICATION_ID,
     });
 
-    expect(client.calls).toHaveLength(1);
+    expect(client.calls).toHaveLength(2);
     expect(client.calls[0]).toMatchObject({
       method: "post",
       path: "/documents/doc_123/send",
@@ -829,7 +831,10 @@ describe("registerDocumentTools", () => {
         name: "document_create",
         arguments: {
           name: "Agreement",
-          recipients: [{ id: "1", email: "a@example.com" }],
+          recipients: [
+            { id: "1", email: "a@example.com", first_name: " Mary ", last_name: "Poppins" },
+            { id: "2", email: "b@example.com", name: "Bert", first_name: "Ignored" },
+          ],
           files: [{ name: "doc.pdf", file_url: "https://example.com/1.pdf" }],
           text_tags: true,
           draft: false,
@@ -847,8 +852,14 @@ describe("registerDocumentTools", () => {
           draft: true,
           text_tags: true,
           api_application_id: API_APPLICATION_ID,
+          recipients: [
+            { id: "1", email: "a@example.com", name: "Mary Poppins" },
+            { id: "2", email: "b@example.com", name: "Bert" },
+          ],
         },
       });
+      const body = surface.client.calls[0]?.body as { recipients: Record<string, unknown>[] };
+      expect(body.recipients.every((r) => !("first_name" in r) && !("last_name" in r))).toBe(true);
     } finally {
       await surface.close();
     }
@@ -877,6 +888,51 @@ describe("registerDocumentTools", () => {
           api_application_id: API_APPLICATION_ID,
         },
       });
+    } finally {
+      await surface.close();
+    }
+  });
+
+  test.each([
+    "fresh",
+    "pending",
+    "failed",
+  ])("accepted send survives a %s status refresh", async (refresh) => {
+    const surface = await setupMcpSurface();
+    surface.client.postResponse = { id: "doc_123", status: "Draft" };
+    surface.client.getResponse = { id: "doc_123", status: refresh === "fresh" ? "Sent" : "Draft" };
+    if (refresh === "failed")
+      surface.client.get = async () => {
+        throw new Error("Timeout");
+      };
+    try {
+      const result = await surface.mcpClient.callTool({
+        name: "document_send_draft",
+        arguments: {
+          document_id: "doc_123",
+          confirm_send: true,
+          name: "Corrected",
+          subject: "Review",
+          reminders: false,
+        },
+      });
+      const payload = parseResult(result as CallToolResult);
+      expect(payload.ok).toBe(true);
+      expect(payload.message).toBe("Send request accepted.");
+      expect(payload.data).toEqual({
+        id: "doc_123",
+        status: refresh === "fresh" ? "Sent" : "Draft",
+      });
+      expect(getWarnings(payload).join(" ")).toContain("do not send again");
+      if (refresh === "failed")
+        expect(getWarnings(payload).join(" ")).toContain("refreshing document status failed");
+      expect(surface.client.calls.filter((call) => call.method === "post")).toEqual([
+        {
+          method: "post",
+          path: "/documents/doc_123/send",
+          body: { name: "Corrected", subject: "Review", reminders: false },
+        },
+      ]);
     } finally {
       await surface.close();
     }

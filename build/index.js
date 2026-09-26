@@ -2087,6 +2087,7 @@ var copiedContactSchema = z3.object({
 var apiApplicationIdSchema = z3.string().uuid().optional().describe("API Application ID for settings isolation.");
 var createDocumentSchema = z3.object({
   name: z3.string().min(1, { message: "Document name is required." }),
+  test_mode: z3.boolean().optional().describe("Create a non-binding test document without API billing."),
   recipients: z3.array(recipientSchema).min(1, { message: "At least one recipient is required." }),
   files: z3.array(fileSchema).min(1, { message: "Include at least one file." }),
   subject: z3.string().optional().describe("Email subject line recipients will see."),
@@ -2130,11 +2131,44 @@ function parseJsonEncodedString(value) {
     return value;
   }
 }
-var sendDraftSchema = z3.object({
+var sendDraftSchema = createDocumentSchema.pick({
+  name: true,
+  test_mode: true,
+  subject: true,
+  message: true,
+  expires_in: true,
+  redirect_url: true,
+  decline_redirect_url: true,
+  metadata: true,
+  custom_requester_name: true,
+  custom_requester_email: true,
+  api_application_id: true
+}).partial().extend({
   document_id: documentIdSchema,
   confirm_send: z3.preprocess(parseJsonEncodedString, z3.boolean()).default(false),
-  message: z3.string().optional(),
-  api_application_id: apiApplicationIdSchema
+  reminders: z3.boolean().optional(),
+  apply_signing_order: z3.boolean().optional(),
+  allow_decline: z3.boolean().optional(),
+  allow_reassign: z3.boolean().optional(),
+  embedded_signing: z3.boolean().optional(),
+  embedded_signing_notifications: z3.boolean().optional()
+}).strict();
+var updateRecipientsSchema = z3.strictObject({
+  document_id: documentIdSchema,
+  confirm_update: z3.preprocess(parseJsonEncodedString, z3.boolean()).default(false).describe("Confirm recipient changes and the notification emails they may send."),
+  recipients: z3.array(
+    z3.strictObject({
+      id: z3.string().min(1).describe("Recipient ID returned by document_get."),
+      name: z3.string().trim().min(1),
+      email: z3.string().email(),
+      subject: z3.string().optional(),
+      message: z3.string().optional()
+    })
+  ).min(1)
+});
+var deleteDocumentSchema = z3.strictObject({
+  document_id: documentIdSchema,
+  confirm_delete: z3.preprocess(parseJsonEncodedString, z3.boolean()).default(false).describe("Confirm deletion of this document and cancellation of signing in progress.")
 });
 var reminderSchema = z3.object({
   document_id: documentIdSchema,
@@ -2290,6 +2324,7 @@ EXAMPLE (pdf with text tags):
 
 TEXT TAGS (optional): Set text_tags: true only if the document already contains signature placeholders like {{signature:1:y}}.
 The recipient "id" MUST match the number in text tags (id:"1" matches {{signature:1:y}}).
+SIGNING DATES: Use {{autofill_date_signed:1:y}} or {{date:1:y::::::y}} to populate and lock the signing date. Replace 1 with the signer number. Plain {{date:1:y}} is editable and is suitable for dates the signer must choose.
 ASYNC FIELD PARSING: SignWell may parse text tags after returning the create response. If the immediate response shows fields: [] or pages_number: 0, call document_get after a few seconds before treating the tags as failed.`,
     createDocumentSchema,
     (input2, extra) => handleCreateDocument(client, input2, extra),
@@ -2311,10 +2346,24 @@ ASYNC FIELD PARSING: SignWell may parse text tags after returning the create res
   );
   register(
     "document_send_draft",
-    "Send a previously created draft document (requires confirm_send).",
+    "Update optional document settings and send a previously created draft (requires confirm_send). Omitted settings are preserved. This endpoint cannot update recipients, files, or fields. Returns a best-effort status refresh; status can still lag. An accepted send must not be retried just because status is Draft: use document_get. Recipient send_email is an embedded-signing setting, not an email-delivery receipt.",
     sendDraftSchema,
     (input2, extra) => handleSendDraft(client, input2, extra),
     { title: "Send Draft", readOnlyHint: false, destructiveHint: false }
+  );
+  register(
+    "document_update_recipients",
+    "Correct names or emails on a sent document (requires confirm_update). First call document_get and use its recipient IDs. Allowed document statuses: sent, viewed, pending, bounced; only recipients who have not started signing can be updated. Include each recipient's name and email, retaining any value you are not changing. Updated recipients on non-embedded documents receive a new notification email; embedded documents follow their existing send_email setting. Drafts and completed documents are not supported.",
+    updateRecipientsSchema,
+    (input2) => handleUpdateRecipients(client, input2),
+    { title: "Update Document Recipients", readOnlyHint: false, destructiveHint: true }
+  );
+  register(
+    "document_delete",
+    "Delete a document and cancel signing if in progress (requires confirm_delete). Use this to withdraw an incorrect request before creating a replacement. This deletes the document; it does not archive it.",
+    deleteDocumentSchema,
+    (input2) => handleDeleteDocument(client, input2),
+    { title: "Delete Document", readOnlyHint: false, destructiveHint: true }
   );
   register(
     "document_send_reminder",
@@ -2425,18 +2474,61 @@ async function handleSendDraft(client, input2, _extra) {
     return validationError("Set confirm_send to true to send this draft.");
   }
   try {
-    const payload = {
-      message: input2.message,
-      ...input2.api_application_id && { api_application_id: input2.api_application_id }
-    };
-    const data = await client.post(`/documents/${input2.document_id}/send`, payload);
+    const { document_id, confirm_send: _confirmSend, ...payload } = input2;
+    const path10 = `/documents/${encodeURIComponent(document_id)}`;
+    let data = await client.post(`${path10}/send`, payload);
+    const warnings = [
+      "Status may update asynchronously. If this response still shows Draft, call document_get after a few seconds; do not send again. Recipient send_email is an embedded-signing setting, not an email-delivery receipt."
+    ];
+    try {
+      data = await client.get(path10, { timeoutMs: 5e3, idempotent: false });
+    } catch {
+      warnings.push(
+        "The send was accepted, but refreshing document status failed. Use document_get to check progress; do not resend."
+      );
+    }
     return successResponse({
       type: "document_send_draft",
-      message: "Draft sent for signing.",
-      data
+      message: "Send request accepted.",
+      data,
+      warnings
     });
   } catch (error) {
     return toToolError(error, "Unable to send the draft.");
+  }
+}
+async function handleUpdateRecipients(client, input2) {
+  if (!input2.confirm_update) {
+    return validationError("Set confirm_update to true to update recipients and notify them.");
+  }
+  try {
+    const data = await client.request({
+      method: "PATCH",
+      path: `/documents/${encodeURIComponent(input2.document_id)}/recipients`,
+      body: { recipients: input2.recipients }
+    });
+    return successResponse({
+      type: "document_update_recipients",
+      message: "Recipients updated.",
+      data
+    });
+  } catch (error) {
+    return toToolError(error, "Unable to update recipients.");
+  }
+}
+async function handleDeleteDocument(client, input2) {
+  if (!input2.confirm_delete) {
+    return validationError("Set confirm_delete to true to delete the document and cancel signing.");
+  }
+  try {
+    await client.delete(`/documents/${encodeURIComponent(input2.document_id)}`);
+    return successResponse({
+      type: "document_delete",
+      message: "Document deleted. Any signing in progress has been cancelled.",
+      data: { document_id: input2.document_id }
+    });
+  } catch (error) {
+    return toToolError(error, "Unable to delete the document.");
   }
 }
 async function handleSendReminder(client, input2, _extra) {
@@ -2999,6 +3091,7 @@ TEXT TAGS (when text_tags: true):
 Your PDF must contain these literal text strings as SELECTABLE TEXT (not images):
 - {{signature:1:y}} - Signature field for placeholder id "1"
 - {{date:1:y}} - Date field for placeholder id "1"
+- {{autofill_date_signed:1:y}} or {{date:1:y::::::y}} - Automatically populated, locked signing date (plain date fields are editable)
 - {{text:1:y:Label}} - Text field with label
 - {{initial:1:y}} - Initials field
 
@@ -3336,7 +3429,7 @@ import { ReadResourceResultSchema as ReadResourceResultSchema4 } from "@modelcon
 import { extractText } from "unpdf";
 import { z as z5 } from "zod";
 var TAG_PATTERN = /\{\{[^}]*\}\}/g;
-var VALID_TAG_PATTERN = /^\{\{(signature|date|text|initial|initials|checkbox):(\w+):(y|n)(?::([^}]+))?\}\}$/;
+var VALID_TAG_PATTERN = /^\{\{(signature|date|text|initial|initials|checkbox|autofill_date_signed|af_d_s):(\w+):(y|n)(?::([^}]+))?\}\}$/;
 var validateTextTagsSchema = z5.object({
   file_token: z5.string().optional().describe("Token from file_store."),
   file_base64: z5.string().optional().describe("Base64-encoded PDF content."),
@@ -3355,6 +3448,7 @@ RECOMMENDED WORKFLOW: file_store \u2192 file_validate_text_tags \u2192 template_
 Accepts a PDF via file_token (from file_store), file_base64, file_url, or resource_uri.
 Set use_picker: true to open a native file picker when no file input is provided.
 Extracts text from the PDF and checks for valid SignWell text tags like {{signature:1:y}}.
+For locked signing dates, use {{autofill_date_signed:1:y}} or {{date:1:y::::::y}}. Plain {{date:1:y}} is editable.
 
 Returns:
 - Whether text is extractable from the PDF
@@ -3430,7 +3524,7 @@ async function handleValidateTextTags(input2, extra) {
     } else if (malformedTags.length > 0) {
       recommendations.push(
         `Found ${malformedTags.length} malformed tag(s). Valid format: {{type:signer_id:required[:label]}}`,
-        "Supported types: signature, date, text, initial, initials, checkbox",
+        "Supported types: signature, date, text, initial, initials, checkbox, autofill_date_signed (or af_d_s)",
         "Required field: 'y' (required) or 'n' (optional)"
       );
       warnings.push(
