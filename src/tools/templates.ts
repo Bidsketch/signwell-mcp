@@ -674,6 +674,7 @@ TEXT TAGS (when text_tags: true):
 Your PDF must contain these literal text strings as SELECTABLE TEXT (not images):
 - {{signature:1:y}} - Signature field for placeholder id "1"
 - {{date:1:y}} - Date field for placeholder id "1"
+- {{autofill_date_signed:1:y}} or {{date:1:y::::::y}} - Automatically populated, locked signing date (plain date fields are editable)
 - {{text:1:y:Label}} - Text field with label
 - {{initial:1:y}} - Initials field
 

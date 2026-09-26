@@ -136,7 +136,7 @@ Sample MCP inspector session (sanitized IDs):
    Tool: document_create
    Input: {
      "name": "Sales Agreement",
-     "recipients": [{ "email": "alice@example.com" }],
+     "recipients": [{ "id": "1", "name": "Alice Example", "email": "alice@example.com" }],
      "files": [{ "name": "agreement.pdf", "file_url": "https://files.example.com/agreement.pdf" }]
    }
    Output:
@@ -160,8 +160,9 @@ Sample MCP inspector session (sanitized IDs):
    {
      "ok": true,
      "type": "document_send_draft",
-     "message": "Draft sent for signing.",
-     "data": { "id": "doc_123", "status": "sent" }
+     "message": "Send request accepted.",
+     "data": { "id": "doc_123", "status": "Sent" },
+     "warnings": ["Status may update asynchronously. If this response still shows Draft, call document_get after a few seconds; do not send again. Recipient send_email is an embedded-signing setting, not an email-delivery receipt."]
    }
    ```
 
@@ -244,6 +245,23 @@ See also the hosted privacy policy at [https://www.signwell.com/privacy/](https:
 
 - `document_create` and `template_create_document` always set `draft: true`, ensuring nothing is emailed until you intentionally call `document_send_draft`.
 - Supply files via the `files` array using either `file_url` (public URL or the link your MCP client provides when you `@`-attach a file in UIs like Claude Desktop), `file_base64`, or `resource_uri`. When a `resource_uri` is provided the MCP server automatically calls `resources/read` to pull the attachment bytes and forwards them to SignWell's `/api/v1/documents/` endpoint.
+
+## Document Corrections and Signing Dates
+
+- **Recipient names:** pass `name` in each `document_create` recipient. Legacy `first_name` and `last_name` are combined when `name` is omitted. Set `test_mode: true` to create a non-binding test document without API billing.
+- **Draft settings:** `document_send_draft` accepts optional updates such as `name`, `subject`, `message`, `expires_in`, and `reminders` alongside `confirm_send: true`. Omitted settings are preserved. It cannot edit recipients, files, or fields, or save changes without sending.
+- **Sent recipients:** call `document_get` for recipient IDs, then `document_update_recipients` with `document_id`, `confirm_update: true`, and `recipients: [{ "id": "<returned recipient ID>", "name": "Correct Name", "email": "signer@example.com" }]`. Include both name and email, keeping the unchanged value. Only recipients who have not started signing on sent/viewed/pending/bounced documents can be changed. Non-embedded recipients receive a new notification email; embedded recipients follow their existing `send_email` setting.
+- **Withdraw a document:** `document_delete` with `document_id` and `confirm_delete: true` deletes the document and cancels signing in progress. Delete an incorrect request before creating a replacement to avoid two live requests.
+- **Send status:** a successful send returns “Send request accepted” and attempts one status refresh. If the refresh fails, the accepted send remains successful. Status may still lag; use `document_get` after a few seconds instead of resending. `send_email` is an embedded-signing option, not a delivery receipt.
+
+For an automatically populated, locked signing date, use these existing SignWell text tags with `text_tags: true`:
+
+```text
+{{signature:1:y}} {{autofill_date_signed:1:y}}
+{{signature:2:y}} {{date:2:y::::::y}}
+```
+
+Both date forms lock the signing date. Plain `{{date:1:y}}` remains editable for dates the signer should choose. Text-tag parsing is asynchronous: inspect fields with `document_get` after processing. See [SignWell's text-tag options](https://developers.signwell.com/reference/text-tag-options), [recipient updates](https://developers.signwell.com/reference/updaterecipients), and [update-and-send limitations](https://developers.signwell.com/reference/senddocument).
 
 ## Available Scripts
 

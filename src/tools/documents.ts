@@ -92,6 +92,10 @@ const apiApplicationIdSchema = z
 
 const createDocumentSchema = z.object({
   name: z.string().min(1, { message: "Document name is required." }),
+  test_mode: z
+    .boolean()
+    .optional()
+    .describe("Create a non-binding test document without API billing."),
   recipients: z.array(recipientSchema).min(1, { message: "At least one recipient is required." }),
   files: z.array(fileSchema).min(1, { message: "Include at least one file." }),
   subject: z.string().optional().describe("Email subject line recipients will see."),
@@ -181,11 +185,58 @@ function parseJsonEncodedString(value: unknown): unknown {
   }
 }
 
-const sendDraftSchema = z.object({
+const sendDraftSchema = createDocumentSchema
+  .pick({
+    name: true,
+    test_mode: true,
+    subject: true,
+    message: true,
+    expires_in: true,
+    redirect_url: true,
+    decline_redirect_url: true,
+    metadata: true,
+    custom_requester_name: true,
+    custom_requester_email: true,
+    api_application_id: true,
+  })
+  .partial()
+  .extend({
+    document_id: documentIdSchema,
+    confirm_send: z.preprocess(parseJsonEncodedString, z.boolean()).default(false),
+    reminders: z.boolean().optional(),
+    apply_signing_order: z.boolean().optional(),
+    allow_decline: z.boolean().optional(),
+    allow_reassign: z.boolean().optional(),
+    embedded_signing: z.boolean().optional(),
+    embedded_signing_notifications: z.boolean().optional(),
+  })
+  .strict();
+
+const updateRecipientsSchema = z.strictObject({
   document_id: documentIdSchema,
-  confirm_send: z.preprocess(parseJsonEncodedString, z.boolean()).default(false),
-  message: z.string().optional(),
-  api_application_id: apiApplicationIdSchema,
+  confirm_update: z
+    .preprocess(parseJsonEncodedString, z.boolean())
+    .default(false)
+    .describe("Confirm recipient changes and the notification emails they may send."),
+  recipients: z
+    .array(
+      z.strictObject({
+        id: z.string().min(1).describe("Recipient ID returned by document_get."),
+        name: z.string().trim().min(1),
+        email: z.string().email(),
+        subject: z.string().optional(),
+        message: z.string().optional(),
+      }),
+    )
+    .min(1),
+});
+
+const deleteDocumentSchema = z.strictObject({
+  document_id: documentIdSchema,
+  confirm_delete: z
+    .preprocess(parseJsonEncodedString, z.boolean())
+    .default(false)
+    .describe("Confirm deletion of this document and cancellation of signing in progress."),
 });
 
 const reminderSchema = z.object({
@@ -206,6 +257,8 @@ type CreateDocumentInput = z.infer<typeof createDocumentSchema>;
 type ListDocumentsInput = z.infer<typeof listDocumentsSchema>;
 type GetDocumentInput = z.infer<typeof getDocumentSchema>;
 type SendDraftInput = z.infer<typeof sendDraftSchema>;
+type UpdateRecipientsInput = z.infer<typeof updateRecipientsSchema>;
+type DeleteDocumentInput = z.infer<typeof deleteDocumentSchema>;
 type ReminderInput = z.infer<typeof reminderSchema>;
 type CompletedPdfInput = z.infer<typeof completedPdfSchema>;
 
@@ -375,6 +428,7 @@ EXAMPLE (pdf with text tags):
 
 TEXT TAGS (optional): Set text_tags: true only if the document already contains signature placeholders like {{signature:1:y}}.
 The recipient "id" MUST match the number in text tags (id:"1" matches {{signature:1:y}}).
+SIGNING DATES: Use {{autofill_date_signed:1:y}} or {{date:1:y::::::y}} to populate and lock the signing date. Replace 1 with the signer number. Plain {{date:1:y}} is editable and is suitable for dates the signer must choose.
 ASYNC FIELD PARSING: SignWell may parse text tags after returning the create response. If the immediate response shows fields: [] or pages_number: 0, call document_get after a few seconds before treating the tags as failed.`,
     createDocumentSchema,
     (input, extra) => handleCreateDocument(client, input, extra),
@@ -399,10 +453,26 @@ ASYNC FIELD PARSING: SignWell may parse text tags after returning the create res
 
   register(
     "document_send_draft",
-    "Send a previously created draft document (requires confirm_send).",
+    "Update optional document settings and send a previously created draft (requires confirm_send). Omitted settings are preserved. This endpoint cannot update recipients, files, or fields. Returns a best-effort status refresh; status can still lag. An accepted send must not be retried just because status is Draft: use document_get. Recipient send_email is an embedded-signing setting, not an email-delivery receipt.",
     sendDraftSchema,
     (input, extra) => handleSendDraft(client, input, extra),
     { title: "Send Draft", readOnlyHint: false, destructiveHint: false },
+  );
+
+  register(
+    "document_update_recipients",
+    "Correct names or emails on a sent document (requires confirm_update). First call document_get and use its recipient IDs. Allowed document statuses: sent, viewed, pending, bounced; only recipients who have not started signing can be updated. Include each recipient's name and email, retaining any value you are not changing. Updated recipients on non-embedded documents receive a new notification email; embedded documents follow their existing send_email setting. Drafts and completed documents are not supported.",
+    updateRecipientsSchema,
+    (input) => handleUpdateRecipients(client, input),
+    { title: "Update Document Recipients", readOnlyHint: false, destructiveHint: true },
+  );
+
+  register(
+    "document_delete",
+    "Delete a document and cancel signing if in progress (requires confirm_delete). Use this to withdraw an incorrect request before creating a replacement. This deletes the document; it does not archive it.",
+    deleteDocumentSchema,
+    (input) => handleDeleteDocument(client, input),
+    { title: "Delete Document", readOnlyHint: false, destructiveHint: true },
   );
 
   register(
@@ -552,18 +622,69 @@ async function handleSendDraft(
   }
 
   try {
-    const payload = {
-      message: input.message,
-      ...(input.api_application_id && { api_application_id: input.api_application_id }),
-    };
-    const data = await client.post(`/documents/${input.document_id}/send`, payload);
+    const { document_id, confirm_send: _confirmSend, ...payload } = input;
+    const path = `/documents/${encodeURIComponent(document_id)}`;
+    let data = await client.post(`${path}/send`, payload);
+    const warnings = [
+      "Status may update asynchronously. If this response still shows Draft, call document_get after a few seconds; do not send again. Recipient send_email is an embedded-signing setting, not an email-delivery receipt.",
+    ];
+    try {
+      data = await client.get(path, { timeoutMs: 5_000, idempotent: false });
+    } catch {
+      warnings.push(
+        "The send was accepted, but refreshing document status failed. Use document_get to check progress; do not resend.",
+      );
+    }
     return successResponse({
       type: "document_send_draft",
-      message: "Draft sent for signing.",
+      message: "Send request accepted.",
       data,
+      warnings,
     });
   } catch (error) {
     return toToolError(error, "Unable to send the draft.");
+  }
+}
+
+async function handleUpdateRecipients(
+  client: SignWellClient,
+  input: UpdateRecipientsInput,
+): Promise<CallToolResult> {
+  if (!input.confirm_update) {
+    return validationError("Set confirm_update to true to update recipients and notify them.");
+  }
+  try {
+    const data = await client.request({
+      method: "PATCH",
+      path: `/documents/${encodeURIComponent(input.document_id)}/recipients`,
+      body: { recipients: input.recipients },
+    });
+    return successResponse({
+      type: "document_update_recipients",
+      message: "Recipients updated.",
+      data,
+    });
+  } catch (error) {
+    return toToolError(error, "Unable to update recipients.");
+  }
+}
+
+async function handleDeleteDocument(
+  client: SignWellClient,
+  input: DeleteDocumentInput,
+): Promise<CallToolResult> {
+  if (!input.confirm_delete) {
+    return validationError("Set confirm_delete to true to delete the document and cancel signing.");
+  }
+  try {
+    await client.delete(`/documents/${encodeURIComponent(input.document_id)}`);
+    return successResponse({
+      type: "document_delete",
+      message: "Document deleted. Any signing in progress has been cancelled.",
+      data: { document_id: input.document_id },
+    });
+  } catch (error) {
+    return toToolError(error, "Unable to delete the document.");
   }
 }
 
