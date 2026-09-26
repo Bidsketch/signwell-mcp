@@ -3,7 +3,7 @@
   "name": "signwell",
   "display_name": "SignWell",
   "description": "Model Context Protocol server that orchestrates SignWell's e-signature workflows \u2014 create, send, track, and manage documents and templates.",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "author": {
     "name": "SignWell",
     "url": "https://github.com/Bidsketch"
