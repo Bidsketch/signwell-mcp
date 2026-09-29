@@ -1,10 +1,6 @@
 # SignWell MCP Server
 
-Send documents for e-signature, track signing status, and manage templates in SignWell from Claude, Cursor, and other MCP clients.
-
-- **Claude users:** add the SignWell plugin from the Claude directory (source in [`claude-plugin/`](claude-plugin/)).
-- **Other MCP clients:** `npx @signwell/mcp setup`, or find `io.github.bidsketch/signwell-mcp` in the [official MCP Registry](https://registry.modelcontextprotocol.io/).
-- **Developers:** everything below.
+Model Context Protocol server that orchestrates SignWell's e-signature workflows.
 
 ## Prerequisites
 
