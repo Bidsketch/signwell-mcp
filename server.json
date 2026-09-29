@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.bidsketch/signwell-mcp",
-  "description": "Send documents for e-signature, track signing status, and manage templates in SignWell from any MCP client.",
+  "description": "Send documents for e-signature, track signing, and manage templates in SignWell from any MCP client.",
   "version": "0.3.6",
   "websiteUrl": "https://www.signwell.com/mcp/",
   "repository": {
