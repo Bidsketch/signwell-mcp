@@ -103,6 +103,12 @@ function detectTestMode(): boolean {
 }
 
 function hydrateEnvFromDefaultFile(): void {
+  // The stored env file is a fallback for when no API key is provided at all.
+  // When the caller supplies SIGNWELL_API_KEY itself, leave the file alone so a
+  // stale base-URL or timeout override from an earlier `setup` run can't leak in.
+  if (!isUnset(process.env.SIGNWELL_API_KEY)) {
+    return;
+  }
   const missingKeys = REQUIRED_KEYS.filter((key) => isUnset(process.env[key]));
   if (missingKeys.length === 0) {
     return;

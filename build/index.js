@@ -140,6 +140,9 @@ function detectTestMode() {
   return process2.env.NODE_ENV === "test";
 }
 function hydrateEnvFromDefaultFile() {
+  if (!isUnset(process2.env.SIGNWELL_API_KEY)) {
+    return;
+  }
   const missingKeys = REQUIRED_KEYS.filter((key) => isUnset(process2.env[key]));
   if (missingKeys.length === 0) {
     return;

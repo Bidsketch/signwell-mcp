@@ -103,3 +103,28 @@ test("loadEnv reads missing values from stored env file", async () => {
 
   await fsp.rm(tempHome, { recursive: true, force: true });
 });
+
+test("loadEnv ignores the stored env file when SIGNWELL_API_KEY is provided", async () => {
+  trackedKeys.forEach((key) => {
+    delete process.env[key];
+  });
+
+  const tempHome = await fsp.mkdtemp(path.join(os.tmpdir(), "signwell-env-file-"));
+  process.env.SIGNWELL_MCP_HOME = tempHome;
+
+  await writeEnvFile({
+    apiKey: "file-key-123",
+    baseUrl: "https://sandbox.signwell.test",
+    timeoutMs: 12000,
+  });
+
+  process.env.SIGNWELL_API_KEY = "env-key-456";
+
+  const config = loadEnv({ version: "0.5.0", quiet: true });
+
+  expect(config.apiKey).toBe("env-key-456");
+  expect(config.baseUrl).toBe("https://www.signwell.com/api/v1");
+  expect(config.timeoutMs).toBe(90_000);
+
+  await fsp.rm(tempHome, { recursive: true, force: true });
+});
