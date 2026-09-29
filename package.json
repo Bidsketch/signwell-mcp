@@ -1,7 +1,7 @@
 {
   "name": "@signwell/mcp",
-  "mcpName": "io.github.bidsketch/signwell-mcp",
-  "version": "0.3.6",
+  "mcpName": "io.github.Bidsketch/signwell-mcp",
+  "version": "0.3.7",
   "description": "Send documents for e-signature, track signing status, and manage templates in SignWell from Claude, Cursor, and other MCP clients.",
   "type": "module",
   "main": "build/index.js",
