@@ -1,0 +1,122 @@
+name: Publish
+
+# Publishes a tagged release to npm and to the official MCP Registry using the
+# repository's own identity (GitHub OIDC). No personal tokens or accounts are
+# involved: npm uses trusted publishing, the registry uses github-oidc, and the
+# namespace io.github.bidsketch/* is granted because this repo belongs to the org.
+#
+# Release flow:   npm version patch   →   git push --follow-tags
+# The tag must match package.json (v0.3.7 ↔ "0.3.7"); the job refuses otherwise.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      # npm trusted publishing (OIDC) needs npm >= 11.5.1; setup-node ships an older npm.
+      - name: Upgrade npm
+        run: npm install -g npm@11 && npm --version
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Resolve version and check the tag matches package.json
+        id: version
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/v}"
+            if [[ "$TAG" != "$VERSION" ]]; then
+              echo "::error::Tag v$TAG does not match package.json version $VERSION"
+              exit 1
+            fi
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Publishing @signwell/mcp@$VERSION"
+
+      - name: Install
+        run: npm ci
+
+      - name: Test
+        run: bun test
+
+      - name: Build
+        run: npm run build
+
+      - name: Publish to npm (skipped if this version is already published)
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          if npm view "@signwell/mcp@$VERSION" version >/dev/null 2>&1; then
+            echo "@signwell/mcp@$VERSION is already on npm; skipping."
+          else
+            npm publish --provenance --access public
+          fi
+
+      - name: Wait for npm to serve the new version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            if curl -fsS "https://registry.npmjs.org/@signwell%2fmcp" | jq -e --arg v "$VERSION" '.versions | has($v)' >/dev/null; then
+              echo "npm serves $VERSION"; exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::npm never served @signwell/mcp@$VERSION"; exit 1
+
+      - name: Install mcp-publisher
+        env:
+          MCP_PUBLISHER_VERSION: v1.8.1
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+          ./mcp-publisher --version
+
+      - name: Sync server.json versions from package.json
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          jq --arg v "$VERSION" '.version = $v | .packages[0].version = $v' server.json > server.json.tmp
+          mv server.json.tmp server.json
+          ./mcp-publisher validate
+
+      - name: Authenticate to the MCP Registry (OIDC, org identity)
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish to the MCP Registry
+        run: ./mcp-publisher publish
+
+      - name: Verify the registry entry
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          sleep 5
+          curl -fsS 'https://registry.modelcontextprotocol.io/v0/servers?search=io.github.bidsketch/signwell-mcp' \
+            | jq -e --arg v "$VERSION" '.servers[] | select(.server.version == $v)' >/dev/null \
+            && echo "Registry lists io.github.bidsketch/signwell-mcp@$VERSION"
