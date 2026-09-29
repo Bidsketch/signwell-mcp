@@ -1,0 +1,30 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.bidsketch/signwell-mcp",
+  "description": "Send documents for e-signature, track signing status, and manage templates in SignWell from any MCP client.",
+  "version": "0.3.6",
+  "websiteUrl": "https://www.signwell.com/mcp/",
+  "repository": {
+    "url": "https://github.com/Bidsketch/signwell-mcp",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@signwell/mcp",
+      "version": "0.3.6",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "SIGNWELL_API_KEY",
+          "description": "SignWell API key with document access (Settings > API in your SignWell account).",
+          "isRequired": true,
+          "isSecret": true,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}
