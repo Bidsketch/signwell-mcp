@@ -27,10 +27,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # No registry-url here: with it, setup-node writes an empty _authToken to
+      # .npmrc when NPM_TOKEN is unset, and npm then skips the OIDC exchange.
       - uses: actions/setup-node@v5
         with:
           node-version: "22"
-          registry-url: "https://registry.npmjs.org"
 
       # npm trusted publishing (OIDC) needs npm >= 11.5.1; setup-node ships an older npm.
       - name: Upgrade npm
