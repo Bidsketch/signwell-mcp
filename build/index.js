@@ -140,6 +140,9 @@ function detectTestMode() {
   return process2.env.NODE_ENV === "test";
 }
 function hydrateEnvFromDefaultFile() {
+  if (!isUnset(process2.env.SIGNWELL_API_KEY)) {
+    return;
+  }
   const missingKeys = REQUIRED_KEYS.filter((key) => isUnset(process2.env[key]));
   if (missingKeys.length === 0) {
     return;
@@ -3616,7 +3619,7 @@ async function extractPdfText(data) {
 }
 
 // src/index.ts
-var VERSION = true ? "0.3.5" : "dev";
+var VERSION = true ? "0.3.6" : "dev";
 var SERVER_NAME = "signwell";
 var HELP_TEXT2 = `
 SignWell MCP Server v${VERSION}
