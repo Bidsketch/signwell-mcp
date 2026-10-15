@@ -6,6 +6,8 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
+import { DEFAULT_BASE_URL } from "../src/config/env.ts";
+import { webAppUrl } from "../src/signwell/client.ts";
 import { SignWellError } from "../src/signwell/errors.ts";
 import { registerDocumentTools } from "../src/tools/documents.ts";
 import { putStoredFileForTests } from "../src/tools/files.ts";
@@ -20,6 +22,7 @@ interface MockCall {
 }
 
 class MockClient {
+  baseUrl = DEFAULT_BASE_URL;
   calls: MockCall[] = [];
   getResponse: Record<string, unknown> = {};
   postResponse: Record<string, unknown> | null = null;
@@ -44,6 +47,10 @@ class MockClient {
   async requestBuffer(options: { path: string }): Promise<ArrayBuffer> {
     this.calls.push({ method: "buffer", path: options.path, options });
     return this.bufferResponse;
+  }
+
+  appUrl(path: string): string {
+    return webAppUrl(this.baseUrl, path);
   }
 }
 
@@ -291,6 +298,28 @@ describe("registerDocumentTools", () => {
     const warnings = getWarnings(payload);
     expect(warnings.some((warning) => warning.includes("editor_url"))).toBe(true);
     expect(warnings.some((warning) => warning.includes("document_get"))).toBe(true);
+  });
+
+  test("create tool builds the editor link on the configured environment's host", async () => {
+    const { handlers, client } = setupTools();
+    const handler = handlers.get("document_create");
+    if (!handler) {
+      throw new Error("handler missing");
+    }
+
+    client.baseUrl = "https://staging.signwell.com/api/v1";
+    client.postResponse = { id: "doc-123" };
+
+    const result = await handler({
+      name: "Agreement",
+      recipients: [{ id: "1", email: "a@example.com" }],
+      files: [{ name: "doc.pdf", file_url: "https://example.com/1.pdf" }],
+    });
+
+    expect(parseResult(result).data).toHaveProperty(
+      "editor_url",
+      "https://staging.signwell.com/app/builder/doc-123",
+    );
   });
 
   test("create tool resolves resource_uri into base64", async () => {

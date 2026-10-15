@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 
-import { SignWellClient } from "../src/signwell/client.ts";
+import { SignWellClient, webAppUrl } from "../src/signwell/client.ts";
+import { DEFAULT_BASE_URL } from "../src/config/env.ts";
 import { SignWellError } from "../src/signwell/errors.ts";
 import { installMockFetch, jsonErrorResponse, jsonResponse } from "./helpers/mockFetch.ts";
 
@@ -86,4 +87,30 @@ test("aborts when timeout exceeded", async () => {
   const client = createClient({ timeoutMs: 50 });
 
   await expect(client.get("/documents")).rejects.toBeInstanceOf(SignWellError);
+});
+
+test("appUrl points at the production web app for the default base URL", () => {
+  const client = createClient({ baseUrl: DEFAULT_BASE_URL });
+
+  expect(client.appUrl("builder/doc_123")).toBe("https://www.signwell.com/app/builder/doc_123");
+});
+
+test("appUrl follows a staging base URL instead of production", () => {
+  const client = createClient({ baseUrl: "https://staging.signwell.com/api/v1/" });
+
+  expect(client.appUrl("template_builder/tmp_1")).toBe(
+    "https://staging.signwell.com/app/template_builder/tmp_1",
+  );
+});
+
+test("webAppUrl keeps a path prefix in front of the API version", () => {
+  expect(webAppUrl("http://localhost:3000/prefix/api/v1", "builder/doc_1")).toBe(
+    "http://localhost:3000/prefix/app/builder/doc_1",
+  );
+});
+
+test("webAppUrl uses the host root when the base URL has no /api/vN path", () => {
+  expect(webAppUrl("https://api.signwell.test/v1", "/builder/doc_1")).toBe(
+    "https://api.signwell.test/app/builder/doc_1",
+  );
 });

@@ -317,19 +317,25 @@ type ToolExtra = {
   ) => Promise<ReadResourceResult>;
 };
 
-function deriveEditorUrl(data: Record<string, unknown>): string | undefined {
+function deriveEditorUrl(
+  client: SignWellClient,
+  data: Record<string, unknown>,
+): string | undefined {
   const id = data.id;
   if (typeof id === "string" && id.length > 0) {
-    return `https://www.signwell.com/app/builder/${id}`;
+    return client.appUrl(`builder/${id}`);
   }
 
   return undefined;
 }
 
-function attachEditorLink(data: unknown): { payload: unknown; editorUrl?: string } {
+function attachEditorLink(
+  client: SignWellClient,
+  data: unknown,
+): { payload: unknown; editorUrl?: string } {
   if (data && typeof data === "object" && !Array.isArray(data)) {
     const record = data as Record<string, unknown>;
-    const editorUrl = deriveEditorUrl(record);
+    const editorUrl = deriveEditorUrl(client, record);
     if (editorUrl) {
       return {
         payload: { ...record, editor_url: editorUrl },
@@ -530,7 +536,7 @@ async function handleCreateDocument(
       draft: true,
     };
     const data = await client.post("/documents", payload);
-    const { payload: responsePayload, editorUrl } = attachEditorLink(data);
+    const { payload: responsePayload, editorUrl } = attachEditorLink(client, data);
     const warnings: string[] = [];
     if (input.text_tags) {
       warnings.push(
