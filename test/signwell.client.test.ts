@@ -109,6 +109,14 @@ test("webAppUrl keeps a path prefix in front of the API version", () => {
   );
 });
 
+test("appUrl keeps a path prefix after the client normalizes the base URL", () => {
+  const client = createClient({ baseUrl: "http://localhost:3000/prefix/api/v1" });
+
+  expect(client.appUrl("builder/doc_1")).toBe(
+    "http://localhost:3000/prefix/app/builder/doc_1",
+  );
+});
+
 test("webAppUrl uses the host root when the base URL has no /api/vN path", () => {
   expect(webAppUrl("https://api.signwell.test/v1", "/builder/doc_1")).toBe(
     "https://api.signwell.test/app/builder/doc_1",
