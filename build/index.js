@@ -3628,7 +3628,7 @@ async function extractPdfText(data) {
 }
 
 // src/index.ts
-var VERSION = true ? "0.3.7" : "dev";
+var VERSION = true ? "0.3.8" : "dev";
 var SERVER_NAME = "signwell";
 var HELP_TEXT2 = `
 SignWell MCP Server v${VERSION}
