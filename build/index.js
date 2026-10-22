@@ -1355,6 +1355,12 @@ function mapStatusToType(status) {
 var DEFAULT_TIMEOUT_MS2 = 6e4;
 var MAX_RETRIES = 3;
 var RETRYABLE_METHODS = /* @__PURE__ */ new Set(["GET", "HEAD", "OPTIONS", "DELETE"]);
+var API_VERSION_PATH = /\/api\/v\d+\/?$/;
+function webAppUrl(baseUrl, path10) {
+  const base = new URL(baseUrl);
+  const root = API_VERSION_PATH.test(base.pathname) ? base.pathname.replace(API_VERSION_PATH, "/") : "/";
+  return new URL(`${root}app/${path10.replace(/^\//, "")}`, base.origin).toString();
+}
 var SignWellClient = class {
   apiKey;
   baseUrl;
@@ -1382,6 +1388,9 @@ var SignWellClient = class {
   }
   async delete(path10, options = {}) {
     return this.request({ ...options, path: path10, method: "DELETE" });
+  }
+  appUrl(path10) {
+    return webAppUrl(this.baseUrl.toString(), path10);
   }
   async request(options) {
     const response = await this.performRequest(options);
@@ -2228,17 +2237,17 @@ function validateFileExtension(name, fileUrl) {
   return void 0;
 }
 var COMPLETED_PDF_WARNING_THRESHOLD_BYTES = 5 * 1024 * 1024;
-function deriveEditorUrl(data) {
+function deriveEditorUrl(client, data) {
   const id = data.id;
   if (typeof id === "string" && id.length > 0) {
-    return `https://www.signwell.com/app/builder/${id}`;
+    return client.appUrl(`builder/${id}`);
   }
   return void 0;
 }
-function attachEditorLink(data) {
+function attachEditorLink(client, data) {
   if (data && typeof data === "object" && !Array.isArray(data)) {
     const record = data;
-    const editorUrl = deriveEditorUrl(record);
+    const editorUrl = deriveEditorUrl(client, record);
     if (editorUrl) {
       return {
         payload: { ...record, editor_url: editorUrl },
@@ -2407,7 +2416,7 @@ async function handleCreateDocument(client, input2, extra) {
       draft: true
     };
     const data = await client.post("/documents", payload);
-    const { payload: responsePayload, editorUrl } = attachEditorLink(data);
+    const { payload: responsePayload, editorUrl } = attachEditorLink(client, data);
     const warnings = [];
     if (input2.text_tags) {
       warnings.push(
@@ -3208,7 +3217,7 @@ async function handleTemplateCreate(client, input2, extra) {
       draft: input2.draft ?? true
     };
     const data = await client.post("/document_templates", payload);
-    data.template_builder_url = `https://www.signwell.com/app/template_builder/${data.id}`;
+    data.template_builder_url = client.appUrl(`template_builder/${data.id}`);
     const warnings = [];
     const hasFields = data.fields && data.fields.length > 0 && data.fields.some((f) => f.length > 0);
     if (input2.text_tags && hasFields) {
@@ -3619,7 +3628,7 @@ async function extractPdfText(data) {
 }
 
 // src/index.ts
-var VERSION = true ? "0.3.7" : "dev";
+var VERSION = true ? "0.3.8" : "dev";
 var SERVER_NAME = "signwell";
 var HELP_TEXT2 = `
 SignWell MCP Server v${VERSION}

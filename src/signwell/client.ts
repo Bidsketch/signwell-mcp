@@ -24,6 +24,18 @@ export interface RequestOptions {
   timeoutMs?: number;
 }
 
+const API_VERSION_PATH = /\/api\/v\d+\/?$/;
+
+// The web app is served from the same host as the API (www.signwell.com/api/v1 -> www.signwell.com/app/...),
+// so a staging or QA base URL has to produce staging or QA links.
+export function webAppUrl(baseUrl: string, path: string): string {
+  const base = new URL(baseUrl);
+  const root = API_VERSION_PATH.test(base.pathname)
+    ? base.pathname.replace(API_VERSION_PATH, "/")
+    : "/";
+  return new URL(`${root}app/${path.replace(/^\//, "")}`, base.origin).toString();
+}
+
 export class SignWellClient {
   private readonly apiKey: string;
   private readonly baseUrl: URL;
@@ -64,6 +76,10 @@ export class SignWellClient {
 
   async delete<T>(path: string, options: Omit<RequestOptions, "method" | "path"> = {}): Promise<T> {
     return this.request<T>({ ...options, path, method: "DELETE" });
+  }
+
+  appUrl(path: string): string {
+    return webAppUrl(this.baseUrl.toString(), path);
   }
 
   async request<T>(options: RequestOptions): Promise<T> {

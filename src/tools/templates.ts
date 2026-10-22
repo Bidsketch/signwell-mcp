@@ -814,7 +814,7 @@ async function handleTemplateCreate(
       draft: input.draft ?? true,
     };
     const data = await client.post<TemplateResponse>("/document_templates", payload);
-    data.template_builder_url = `https://www.signwell.com/app/template_builder/${data.id}`;
+    data.template_builder_url = client.appUrl(`template_builder/${data.id}`);
 
     const warnings: string[] = [];
     const hasFields =

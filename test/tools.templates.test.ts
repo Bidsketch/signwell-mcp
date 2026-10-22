@@ -3,11 +3,14 @@ import { describe, expect, test } from "bun:test";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
+import { DEFAULT_BASE_URL } from "../src/config/env.ts";
+import { webAppUrl } from "../src/signwell/client.ts";
 import { SignWellError } from "../src/signwell/errors.ts";
 import { putStoredFileForTests } from "../src/tools/files.ts";
 import { registerTemplateTools } from "../src/tools/templates.ts";
 
 class MockClient {
+  baseUrl = DEFAULT_BASE_URL;
   calls: Array<{ method: string; path: string; payload?: unknown; options?: unknown }> = [];
   responses: Record<string, unknown> = {};
   error?: SignWellError;
@@ -34,6 +37,10 @@ class MockClient {
     this.calls.push({ method: "delete", path });
     if (this.error) throw this.error;
     return (this.responses[path] as Record<string, unknown>) ?? { path };
+  }
+
+  appUrl(path: string): string {
+    return webAppUrl(this.baseUrl, path);
   }
 }
 
@@ -104,6 +111,26 @@ describe("registerTemplateTools", () => {
     expect(payload.type).toBe("template_create_document");
     expect(payload.message).toBe(
       "Document has been sent for signing. Recipients will receive an email to sign the document.",
+    );
+  });
+
+  test("template_create builds the builder link on the configured environment's host", async () => {
+    const { handlers, client } = setupTemplateTools();
+    const handler = handlers.get("template_create");
+    if (!handler) throw new Error("handler missing");
+
+    client.baseUrl = "https://staging.signwell.com/api/v1";
+    client.responses["/document_templates"] = { id: "tmp_1", fields: [[{ type: "signature" }]] };
+
+    const result = await handler({
+      name: "Template",
+      placeholders: [{ id: "signer_1", name: "Signer" }],
+      files: [{ name: "doc.pdf", file_url: "https://example.com/doc.pdf" }],
+    });
+
+    expect(parseResult(result).data).toHaveProperty(
+      "template_builder_url",
+      "https://staging.signwell.com/app/template_builder/tmp_1",
     );
   });
 
