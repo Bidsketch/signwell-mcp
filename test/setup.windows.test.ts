@@ -102,6 +102,12 @@ console.log(JSON.stringify(buildLaunchCommand(process.argv[1], '', 'node', false
         ]),
       ) as LaunchCommand;
       expect(launch.command).toBe("powershell.exe");
+      expect(launch.args.slice(0, 4)).toEqual([
+        "-NoProfile",
+        "-NonInteractive",
+        "-InputFormat",
+        "None",
+      ]);
       expect(launch.args.join(" ")).toContain("npx-cli.js");
 
       const transport = new WindowsSmokeTransport({

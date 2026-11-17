@@ -722,6 +722,10 @@ function buildLaunchCommand(envFilePath, entryPoint, runner, isLocalDev) {
       command: "powershell.exe",
       args: [
         "-NoProfile",
+        "-NonInteractive",
+        // MCP owns stdin. Windows PowerShell must not deserialize it or wait for EOF.
+        "-InputFormat",
+        "None",
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
