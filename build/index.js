@@ -785,7 +785,7 @@ function buildManualSnippet(context) {
     context.isLocalDev
   );
   const windowsLaunch = buildWindowsLaunch(context.entryPoint, context.isLocalDev);
-  const windowsCommand = [windowsLaunch.command, ...windowsLaunch.args].map((part) => /[\s"]/.test(part) ? JSON.stringify(part) : part).join(" ");
+  const windowsCommand = [windowsLaunch.command, ...windowsLaunch.args].map((part) => /\s/.test(part) ? `"${part}"` : part).join(" ");
   const snippetLines = [
     "# POSIX shells",
     posixCommand,
@@ -883,6 +883,10 @@ async function runSetup(args, options = {}) {
   const entryPoint = entryResolution?.entryPoint ?? path8.resolve(repositoryPath, "build/index.js");
   const isLocalDev = entryResolution?.isLocalDev ?? false;
   const launchEnvironment = resolveLaunchEnvironment(flags);
+  const shadowWarning = apiKeyShadowWarning();
+  if (shadowWarning) {
+    console.warn(shadowWarning);
+  }
   if (!fs6.existsSync(entryPoint)) {
     console.warn(
       `[SignWell MCP] Build output not found at ${entryPoint}. Run "npm run build" before configuring MCP clients.`
@@ -1074,6 +1078,12 @@ function resolveLaunchEnvironment(flags) {
     env.SIGNWELL_MCP_HOME = path8.resolve(process7.env.SIGNWELL_MCP_HOME);
   }
   return Object.keys(env).length > 0 ? env : void 0;
+}
+function apiKeyShadowWarning(platform = process7.platform, env = process7.env) {
+  if (platform !== "win32" || !env.SIGNWELL_API_KEY?.trim()) {
+    return void 0;
+  }
+  return "[SignWell MCP] SIGNWELL_API_KEY is set in your environment. If your MCP client passes it to the server, it is used instead of the key stored by setup. Remove it, or set it to the same key.";
 }
 async function maybeOfferApiKeyPage(interactive) {
   if (!interactive) {

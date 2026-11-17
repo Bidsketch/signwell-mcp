@@ -18,6 +18,7 @@ import { ALL_CLIENT_KEYS, parseClientKeys } from "../src/setup/clients.ts";
 import { buildPosixLaunch, buildWindowsLaunch, resolveNpxCli } from "../src/setup/command.ts";
 import { applyCursorConfig, buildCursorSnippet, getCursorConfigPath } from "../src/setup/cursor.ts";
 import { summarizeEnvInstructions } from "../src/setup/env.ts";
+import { apiKeyShadowWarning, resolveLaunchEnvironment } from "../src/setup/index.ts";
 import { buildManualSnippet } from "../src/setup/manual.ts";
 import {
   applyOpenCodeConfig,
@@ -167,6 +168,34 @@ describe("setup client snippets", () => {
     expect(snippet.snippet).toContain("# POSIX shells");
     expect(snippet.snippet).toContain("# Windows (Command Prompt");
     expect(snippet.snippet).toContain("SIGNWELL_DEBUG=1");
+  });
+
+  test("manual Windows command keeps single backslashes in quoted paths", () => {
+    const snippet = buildManualSnippet({
+      ...context,
+      entryPoint: "C:\\My Repo\\build\\index.js",
+      isLocalDev: true,
+    });
+    expect(snippet.snippet).toContain('"C:\\My Repo\\build\\index.js"');
+  });
+});
+
+describe("setup launch environment", () => {
+  test("passes SIGNWELL_MCP_HOME through as an absolute path", () => {
+    const original = process.env.SIGNWELL_MCP_HOME;
+    process.env.SIGNWELL_MCP_HOME = "relative-home";
+    try {
+      expect(resolveLaunchEnvironment({})?.SIGNWELL_MCP_HOME).toBe(path.resolve("relative-home"));
+    } finally {
+      if (original === undefined) delete process.env.SIGNWELL_MCP_HOME;
+      else process.env.SIGNWELL_MCP_HOME = original;
+    }
+  });
+
+  test("warns on Windows when SIGNWELL_API_KEY would shadow the stored key", () => {
+    expect(apiKeyShadowWarning("win32", { SIGNWELL_API_KEY: "old" })).toContain("SIGNWELL_API_KEY");
+    expect(apiKeyShadowWarning("win32", { SIGNWELL_API_KEY: " " })).toBeUndefined();
+    expect(apiKeyShadowWarning("darwin", { SIGNWELL_API_KEY: "old" })).toBeUndefined();
   });
 });
 

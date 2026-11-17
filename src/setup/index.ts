@@ -129,6 +129,10 @@ export async function runSetup(args: string[], options: SetupOptions = {}): Prom
   const entryPoint = entryResolution?.entryPoint ?? path.resolve(repositoryPath, "build/index.js");
   const isLocalDev = entryResolution?.isLocalDev ?? false;
   const launchEnvironment = resolveLaunchEnvironment(flags);
+  const shadowWarning = apiKeyShadowWarning();
+  if (shadowWarning) {
+    console.warn(shadowWarning);
+  }
 
   if (!fs.existsSync(entryPoint)) {
     console.warn(
@@ -374,7 +378,7 @@ function printLogo(): void {
   console.log("\n\n\n");
 }
 
-function resolveLaunchEnvironment(flags: Flags): Record<string, string> | undefined {
+export function resolveLaunchEnvironment(flags: Flags): Record<string, string> | undefined {
   const env: Record<string, string> = {};
   const debugValue =
     flags.debug === true
@@ -392,6 +396,18 @@ function resolveLaunchEnvironment(flags: Flags): Record<string, string> | undefi
   }
 
   return Object.keys(env).length > 0 ? env : undefined;
+}
+
+// The Windows launch leaves the env file to the server, which skips it when SIGNWELL_API_KEY
+// is already set (hydrateEnvFromDefaultFile); the POSIX launch sources the file over it.
+export function apiKeyShadowWarning(
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  if (platform !== "win32" || !env.SIGNWELL_API_KEY?.trim()) {
+    return undefined;
+  }
+  return "[SignWell MCP] SIGNWELL_API_KEY is set in your environment. If your MCP client passes it to the server, it is used instead of the key stored by setup. Remove it, or set it to the same key.";
 }
 
 async function maybeOfferApiKeyPage(interactive: boolean): Promise<void> {

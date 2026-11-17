@@ -86,9 +86,10 @@ test.skipIf(process.platform !== "win32")(
         naming: "[name].mjs",
       });
       expect(compiled.success).toBe(true);
-      const mcpHome = path.join(dir, "mcp home");
-      await fsp.mkdir(mcpHome);
-      const envFile = path.join(mcpHome, "env");
+      // Same lookup as a real install: no SIGNWELL_MCP_HOME, the file sits under %APPDATA%.
+      const appData = path.join(dir, "app data");
+      const envFile = path.join(appData, "SignWell", "MCP", "env");
+      await fsp.mkdir(path.dirname(envFile), { recursive: true });
       await fsp.writeFile(
         envFile,
         "# Windows setup smoke test\r\n\r\nSIGNWELL_API_KEY=smoke=key\r\nSIGNWELL_API_BASE_URL=https://example.invalid/api/v1\r\n",
@@ -113,7 +114,7 @@ console.log(JSON.stringify(buildLaunchCommand(process.argv[1], '', 'node', false
           ...getDefaultEnvironment(),
           // The key must come from the env file the server reads on its own.
           SIGNWELL_API_KEY: "",
-          SIGNWELL_MCP_HOME: mcpHome,
+          APPDATA: appData,
           // An empty offline cache makes falling back to the published package fail.
           npm_config_cache: path.join(dir, "empty-cache"),
           npm_config_offline: "true",

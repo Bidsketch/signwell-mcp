@@ -10,7 +10,7 @@ export function buildManualSnippet(context: SetupRenderContext): ClientSnippet {
   );
   const windowsLaunch = buildWindowsLaunch(context.entryPoint, context.isLocalDev);
   const windowsCommand = [windowsLaunch.command, ...windowsLaunch.args]
-    .map((part) => (/[\s"]/.test(part) ? JSON.stringify(part) : part))
+    .map((part) => (/\s/.test(part) ? `"${part}"` : part))
     .join(" ");
 
   const snippetLines = [
