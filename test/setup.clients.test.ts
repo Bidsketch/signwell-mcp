@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -14,8 +15,10 @@ import {
   getClaudeDesktopConfigPath,
 } from "../src/setup/claude-desktop.ts";
 import { ALL_CLIENT_KEYS, parseClientKeys } from "../src/setup/clients.ts";
-import { buildPosixLaunch, buildPowerShellLaunch } from "../src/setup/command.ts";
+import { buildPosixLaunch, buildWindowsLaunch, resolveNpxCli } from "../src/setup/command.ts";
 import { applyCursorConfig, buildCursorSnippet, getCursorConfigPath } from "../src/setup/cursor.ts";
+import { summarizeEnvInstructions } from "../src/setup/env.ts";
+import { apiKeyShadowWarning, resolveLaunchEnvironment } from "../src/setup/index.ts";
 import { buildManualSnippet } from "../src/setup/manual.ts";
 import {
   applyOpenCodeConfig,
@@ -163,8 +166,36 @@ describe("setup client snippets", () => {
       runner: "node",
     });
     expect(snippet.snippet).toContain("# POSIX shells");
-    expect(snippet.snippet).toContain("# Windows (PowerShell)");
+    expect(snippet.snippet).toContain("# Windows (Command Prompt");
     expect(snippet.snippet).toContain("SIGNWELL_DEBUG=1");
+  });
+
+  test("manual Windows command keeps single backslashes in quoted paths", () => {
+    const snippet = buildManualSnippet({
+      ...context,
+      entryPoint: "C:\\My Repo\\build\\index.js",
+      isLocalDev: true,
+    });
+    expect(snippet.snippet).toContain('"C:\\My Repo\\build\\index.js"');
+  });
+});
+
+describe("setup launch environment", () => {
+  test("passes SIGNWELL_MCP_HOME through as an absolute path", () => {
+    const original = process.env.SIGNWELL_MCP_HOME;
+    process.env.SIGNWELL_MCP_HOME = "relative-home";
+    try {
+      expect(resolveLaunchEnvironment({})?.SIGNWELL_MCP_HOME).toBe(path.resolve("relative-home"));
+    } finally {
+      if (original === undefined) delete process.env.SIGNWELL_MCP_HOME;
+      else process.env.SIGNWELL_MCP_HOME = original;
+    }
+  });
+
+  test("warns on Windows when SIGNWELL_API_KEY would shadow the stored key", () => {
+    expect(apiKeyShadowWarning("win32", { SIGNWELL_API_KEY: "old" })).toContain("SIGNWELL_API_KEY");
+    expect(apiKeyShadowWarning("win32", { SIGNWELL_API_KEY: " " })).toBeUndefined();
+    expect(apiKeyShadowWarning("darwin", { SIGNWELL_API_KEY: "old" })).toBeUndefined();
   });
 });
 
@@ -175,12 +206,46 @@ describe("launch command helpers", () => {
     expect(result).toContain("'/repo/build/index.js'");
   });
 
-  test("powershell launch emits script", () => {
-    const script = buildPowerShellLaunch("C:/Secrets/.env", "C:/repo/build/index.js", "node", true);
-    expect(script).toContain("Test-Path");
-    expect(script).toContain("'C:/repo/build/index.js'");
+  test("windows launch runs node directly, with no shell wrapper", () => {
+    expect(buildWindowsLaunch("C:/repo/build/index.js", true)).toEqual({
+      command: process.execPath,
+      args: ["C:/repo/build/index.js"],
+    });
+    const { command, args } = buildWindowsLaunch("", false);
+    expect(command).toBe(process.execPath);
+    expect(args[0]).toEndWith("npx-cli.js");
+    expect(args.slice(1)).toEqual(["-y", "@signwell/mcp"]);
+  });
+
+  test("npx entry point on Windows is npx-cli.js, not the bash shim beside node.exe", () => {
+    expect(resolveNpxCli("win32", "C:\\Program Files\\nodejs\\node.exe")).toBe(
+      "C:\\Program Files\\nodejs\\node_modules\\npm\\bin\\npx-cli.js",
+    );
+    expect(resolveNpxCli("posix", "/usr/local/bin/node")).toBe("/usr/local/bin/npx");
   });
 });
+
+// Runs the printed instructions in a real PowerShell; GitHub's ubuntu runners ship pwsh.
+test.skipIf(!Bun.which("pwsh"))(
+  "printed Windows env instructions set the variables in PowerShell",
+  async () => {
+    const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "signwell-pwsh-"));
+    const envFile = path.join(dir, "env");
+    await fsp.writeFile(
+      envFile,
+      "# SignWell MCP environment variables\r\nSIGNWELL_API_KEY=key=with=equals\r\n",
+    );
+    try {
+      const [line] = summarizeEnvInstructions(envFile, "win32");
+      const command = `${line.replace(/^PowerShell: /, "")}; $env:SIGNWELL_API_KEY`;
+      const result = spawnSync("pwsh", ["-NoProfile", "-Command", command], { encoding: "utf8" });
+      expect(result.stderr).toBe("");
+      expect(result.stdout.trim()).toBe("key=with=equals");
+    } finally {
+      await fsp.rm(dir, { recursive: true, force: true });
+    }
+  },
+);
 
 describe("client config writers", () => {
   test("claude desktop writer preserves config, merges servers, and backs up existing file", async () => {

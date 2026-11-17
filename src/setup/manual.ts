@@ -1,4 +1,4 @@
-import { buildPosixLaunch, buildPowerShellLaunch } from "./command.ts";
+import { buildPosixLaunch, buildWindowsLaunch } from "./command.ts";
 import type { ClientSnippet, SetupRenderContext } from "./types.ts";
 
 export function buildManualSnippet(context: SetupRenderContext): ClientSnippet {
@@ -8,27 +8,16 @@ export function buildManualSnippet(context: SetupRenderContext): ClientSnippet {
     context.runner,
     context.isLocalDev,
   );
-  const powerShellScript = buildPowerShellLaunch(
-    context.envFilePath,
-    context.entryPoint,
-    context.runner,
-    context.isLocalDev,
-  );
-  const quotedScript = JSON.stringify(powerShellScript);
-  const windowsCommand = [
-    "powershell.exe",
-    "-NoProfile",
-    "-ExecutionPolicy",
-    "Bypass",
-    "-Command",
-    quotedScript,
-  ].join(" ");
+  const windowsLaunch = buildWindowsLaunch(context.entryPoint, context.isLocalDev);
+  const windowsCommand = [windowsLaunch.command, ...windowsLaunch.args]
+    .map((part) => (/\s/.test(part) ? `"${part}"` : part))
+    .join(" ");
 
   const snippetLines = [
     "# POSIX shells",
     posixCommand,
     "",
-    "# Windows (PowerShell)",
+    "# Windows (Command Prompt; the server reads the env file itself)",
     windowsCommand,
   ].join("\n");
 
