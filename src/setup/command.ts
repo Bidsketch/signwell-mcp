@@ -1,3 +1,4 @@
+import path from "node:path";
 import process from "node:process";
 
 import type { LaunchCommand, Runner } from "./types.ts";
@@ -32,7 +33,7 @@ export function buildPosixLaunch(
   const nodeBin = shellQuote(resolveNodeBin());
   const runCmd = isLocalDev
     ? `${nodeBin} ${shellQuote(entryPoint)}`
-    : `${nodeBin} ${shellQuote(resolveNpxBin())} -y @signwell/mcp`;
+    : `${nodeBin} ${shellQuote(resolveNpxCli("posix"))} -y @signwell/mcp`;
   return `set -a && . ${envFile} && set +a && ${runCmd}`;
 }
 
@@ -53,25 +54,39 @@ export function buildPowerShellLaunch(
     "      if ($pair.Length -eq 2) {",
     "        $name = $pair[0]",
     "        $value = $pair[1]",
-    "        $env:$name = $value",
+    "        Set-Item -LiteralPath ('Env:' + $name) -Value $value",
     "      }",
     "    }",
     "  }",
     "}",
   ];
+  // A quoted path is only a string in PowerShell; `&` is what runs it.
   const runCmd = isLocalDev
-    ? `${nodeBin} ${psQuote(entryPoint)}`
-    : `${nodeBin} ${psQuote(resolveNpxBin())} -y @signwell/mcp`;
+    ? `& ${nodeBin} ${psQuote(entryPoint)}`
+    : `& ${nodeBin} ${psQuote(resolveNpxCli("win32"))} -y @signwell/mcp`;
   scriptParts.push(runCmd);
   return scriptParts.join("; ");
 }
 
 /**
- * Resolve the absolute path to `npx` next to the current `node` binary.
+ * Resolve the npx JavaScript entry point next to the `node` binary running setup.
+ * On Windows the `npx` file beside node.exe is a bash script that node cannot load,
+ * so point at npm's npx-cli.js instead.
  */
-function resolveNpxBin(): string {
-  const nodeDir = process.execPath.replace(/[/\\]node([.][a-z]+)?$/i, "");
-  return `${nodeDir}/npx`;
+export function resolveNpxCli(
+  flavor: "win32" | "posix",
+  execPath: string = process.execPath,
+): string {
+  if (flavor === "win32") {
+    return path.win32.join(
+      path.win32.dirname(execPath),
+      "node_modules",
+      "npm",
+      "bin",
+      "npx-cli.js",
+    );
+  }
+  return path.posix.join(path.posix.dirname(execPath), "npx");
 }
 
 export function buildLaunchCommand(

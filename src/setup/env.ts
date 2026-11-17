@@ -94,11 +94,14 @@ function parseEnvContent(raw: string): Partial<EnvValues> {
   return result;
 }
 
-export function summarizeEnvInstructions(envPath: string): string[] {
+export function summarizeEnvInstructions(
+  envPath: string,
+  platform: NodeJS.Platform = process.platform,
+): string[] {
   const commands: string[] = [];
-  if (process.platform === "win32") {
+  if (platform === "win32") {
     commands.push(
-      `PowerShell: Get-Content -Path "${envPath}" | ForEach-Object { $parts = $_.Split('='); if ($parts.Length -eq 2) { $env:$parts[0] = $parts[1] } }`,
+      `PowerShell: Get-Content -Path "${envPath}" | ForEach-Object { $parts = $_.Split('=',2); if ($parts.Length -eq 2) { Set-Item -LiteralPath ('Env:' + $parts[0]) -Value $parts[1] } }`,
     );
   } else {
     commands.push(`Shell: set -a && source "${envPath}" && set +a`);

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -14,8 +15,9 @@ import {
   getClaudeDesktopConfigPath,
 } from "../src/setup/claude-desktop.ts";
 import { ALL_CLIENT_KEYS, parseClientKeys } from "../src/setup/clients.ts";
-import { buildPosixLaunch, buildPowerShellLaunch } from "../src/setup/command.ts";
+import { buildPosixLaunch, buildPowerShellLaunch, resolveNpxCli } from "../src/setup/command.ts";
 import { applyCursorConfig, buildCursorSnippet, getCursorConfigPath } from "../src/setup/cursor.ts";
+import { summarizeEnvInstructions } from "../src/setup/env.ts";
 import { buildManualSnippet } from "../src/setup/manual.ts";
 import {
   applyOpenCodeConfig,
@@ -179,6 +181,61 @@ describe("launch command helpers", () => {
     const script = buildPowerShellLaunch("C:/Secrets/.env", "C:/repo/build/index.js", "node", true);
     expect(script).toContain("Test-Path");
     expect(script).toContain("'C:/repo/build/index.js'");
+  });
+
+  test("powershell launch runs npx through npm's npx-cli.js", () => {
+    const script = buildPowerShellLaunch("C:/Secrets/.env", "", "node", false);
+    expect(script).toMatch(/& '[^']+' '[^']+npx-cli\.js' -y @signwell\/mcp$/);
+  });
+
+  test("npx entry point on Windows is npx-cli.js, not the bash shim beside node.exe", () => {
+    expect(resolveNpxCli("win32", "C:\\Program Files\\nodejs\\node.exe")).toBe(
+      "C:\\Program Files\\nodejs\\node_modules\\npm\\bin\\npx-cli.js",
+    );
+    expect(resolveNpxCli("posix", "/usr/local/bin/node")).toBe("/usr/local/bin/npx");
+  });
+});
+
+// Runs the generated scripts in a real PowerShell; GitHub's ubuntu runners ship pwsh.
+describe.skipIf(!Bun.which("pwsh"))("powershell launch under pwsh", () => {
+  async function writeFixtures() {
+    const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "signwell-pwsh-"));
+    const envFile = path.join(dir, "signwell.env");
+    const entry = path.join(dir, "entry.mjs");
+    await fsp.writeFile(
+      envFile,
+      "# SignWell MCP environment variables\r\nSIGNWELL_API_KEY=key=with=equals\r\n\r\nSIGNWELL_API_BASE_URL=https://example.test/api/v1\r\n",
+    );
+    await fsp.writeFile(
+      entry,
+      'console.log(process.env.SIGNWELL_API_KEY + "|" + process.env.SIGNWELL_API_BASE_URL);\n',
+    );
+    return { dir, envFile, entry };
+  }
+
+  test("loads the env file and starts node", async () => {
+    const { dir, envFile, entry } = await writeFixtures();
+    try {
+      const script = buildPowerShellLaunch(envFile, entry, "node", true);
+      const result = spawnSync("pwsh", ["-NoProfile", "-Command", script], { encoding: "utf8" });
+      expect(result.stderr).toBe("");
+      expect(result.stdout.trim()).toBe("key=with=equals|https://example.test/api/v1");
+    } finally {
+      await fsp.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("printed env instructions set the variables", async () => {
+    const { dir, envFile } = await writeFixtures();
+    try {
+      const [line] = summarizeEnvInstructions(envFile, "win32");
+      const command = `${line.replace(/^PowerShell: /, "")}; $env:SIGNWELL_API_KEY`;
+      const result = spawnSync("pwsh", ["-NoProfile", "-Command", command], { encoding: "utf8" });
+      expect(result.stderr).toBe("");
+      expect(result.stdout.trim()).toBe("key=with=equals");
+    } finally {
+      await fsp.rm(dir, { recursive: true, force: true });
+    }
   });
 });
 

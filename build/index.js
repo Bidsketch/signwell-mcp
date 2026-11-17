@@ -2,7 +2,7 @@
 
 // src/index.ts
 import { realpathSync } from "node:fs";
-import path9 from "node:path";
+import path10 from "node:path";
 import process9 from "node:process";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -165,7 +165,7 @@ function isUnset(value) {
 // src/setup/index.ts
 import { spawn } from "node:child_process";
 import fs6 from "node:fs";
-import path7 from "node:path";
+import path8 from "node:path";
 import process7 from "node:process";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
@@ -663,6 +663,7 @@ function resolveClientConfigs(keys) {
 }
 
 // src/setup/command.ts
+import path6 from "node:path";
 import process5 from "node:process";
 function shellQuote(value) {
   const escaped = value.replace(/'/g, () => `'\\''`);
@@ -678,7 +679,7 @@ function resolveNodeBin() {
 function buildPosixLaunch(envFilePath, entryPoint, _runner, isLocalDev) {
   const envFile = shellQuote(envFilePath);
   const nodeBin = shellQuote(resolveNodeBin());
-  const runCmd = isLocalDev ? `${nodeBin} ${shellQuote(entryPoint)}` : `${nodeBin} ${shellQuote(resolveNpxBin())} -y @signwell/mcp`;
+  const runCmd = isLocalDev ? `${nodeBin} ${shellQuote(entryPoint)}` : `${nodeBin} ${shellQuote(resolveNpxCli("posix"))} -y @signwell/mcp`;
   return `set -a && . ${envFile} && set +a && ${runCmd}`;
 }
 function buildPowerShellLaunch(envFilePath, entryPoint, _runner, isLocalDev) {
@@ -693,19 +694,27 @@ function buildPowerShellLaunch(envFilePath, entryPoint, _runner, isLocalDev) {
     "      if ($pair.Length -eq 2) {",
     "        $name = $pair[0]",
     "        $value = $pair[1]",
-    "        $env:$name = $value",
+    "        Set-Item -LiteralPath ('Env:' + $name) -Value $value",
     "      }",
     "    }",
     "  }",
     "}"
   ];
-  const runCmd = isLocalDev ? `${nodeBin} ${psQuote(entryPoint)}` : `${nodeBin} ${psQuote(resolveNpxBin())} -y @signwell/mcp`;
+  const runCmd = isLocalDev ? `& ${nodeBin} ${psQuote(entryPoint)}` : `& ${nodeBin} ${psQuote(resolveNpxCli("win32"))} -y @signwell/mcp`;
   scriptParts.push(runCmd);
   return scriptParts.join("; ");
 }
-function resolveNpxBin() {
-  const nodeDir = process5.execPath.replace(/[/\\]node([.][a-z]+)?$/i, "");
-  return `${nodeDir}/npx`;
+function resolveNpxCli(flavor, execPath = process5.execPath) {
+  if (flavor === "win32") {
+    return path6.win32.join(
+      path6.win32.dirname(execPath),
+      "node_modules",
+      "npm",
+      "bin",
+      "npx-cli.js"
+    );
+  }
+  return path6.posix.join(path6.posix.dirname(execPath), "npx");
 }
 function buildLaunchCommand(envFilePath, entryPoint, runner, isLocalDev) {
   if (process5.platform === "win32") {
@@ -729,7 +738,7 @@ function buildLaunchCommand(envFilePath, entryPoint, runner, isLocalDev) {
 // src/setup/env.ts
 import fsp5 from "node:fs/promises";
 import os6 from "node:os";
-import path6 from "node:path";
+import path7 from "node:path";
 import process6 from "node:process";
 async function readExistingEnv(filePath = getEnvFilePath()) {
   try {
@@ -748,7 +757,7 @@ async function writeEnvFile(values, options = {}) {
   if (options.printOnly) {
     return { path: filePath, contents, wroteFile: false };
   }
-  const dir = path6.dirname(filePath);
+  const dir = path7.dirname(filePath);
   await fsp5.mkdir(dir, { recursive: true, mode: 448 });
   await fsp5.writeFile(filePath, contents, { mode: 384 });
   try {
@@ -784,11 +793,11 @@ function parseEnvContent(raw) {
   }
   return result;
 }
-function summarizeEnvInstructions(envPath) {
+function summarizeEnvInstructions(envPath, platform = process6.platform) {
   const commands = [];
-  if (process6.platform === "win32") {
+  if (platform === "win32") {
     commands.push(
-      `PowerShell: Get-Content -Path "${envPath}" | ForEach-Object { $parts = $_.Split('='); if ($parts.Length -eq 2) { $env:$parts[0] = $parts[1] } }`
+      `PowerShell: Get-Content -Path "${envPath}" | ForEach-Object { $parts = $_.Split('=',2); if ($parts.Length -eq 2) { Set-Item -LiteralPath ('Env:' + $parts[0]) -Value $parts[1] } }`
     );
   } else {
     commands.push(`Shell: set -a && source "${envPath}" && set +a`);
@@ -913,7 +922,7 @@ async function runSetup(args, options = {}) {
   const entryResolution = resolveEntryPoint();
   const repositoryPath = entryResolution?.repositoryPath ?? process7.cwd();
   const runner = entryResolution?.runner ?? "node";
-  const entryPoint = entryResolution?.entryPoint ?? path7.resolve(repositoryPath, "build/index.js");
+  const entryPoint = entryResolution?.entryPoint ?? path8.resolve(repositoryPath, "build/index.js");
   const isLocalDev = entryResolution?.isLocalDev ?? false;
   const launchEnvironment = resolveLaunchEnvironment(flags);
   if (!fs6.existsSync(entryPoint)) {
@@ -1167,12 +1176,12 @@ function resolveEntryPoint() {
 }
 function resolveLocalSourceEntry() {
   const cwd = process7.cwd();
-  const entryPath = path7.resolve(cwd, "src", "index.ts");
+  const entryPath = path8.resolve(cwd, "src", "index.ts");
   if (!fs6.existsSync(entryPath)) {
     return void 0;
   }
   return {
-    entryPoint: path7.resolve(path7.dirname(entryPath), "..", "build", "index.js"),
+    entryPoint: path8.resolve(path8.dirname(entryPath), "..", "build", "index.js"),
     repositoryPath: inferRepositoryPath(entryPath),
     runner: "node",
     isLocalDev: true
@@ -1180,7 +1189,7 @@ function resolveLocalSourceEntry() {
 }
 function resolveLocalBuildEntry() {
   const cwd = process7.cwd();
-  const entryPath = path7.resolve(cwd, "build", "index.js");
+  const entryPath = path8.resolve(cwd, "build", "index.js");
   if (!fs6.existsSync(entryPath)) {
     return void 0;
   }
@@ -1221,21 +1230,21 @@ function resolveRuntimeEntryPoint() {
   return void 0;
 }
 function inferRepositoryPath(entryPointPath) {
-  let current = path7.dirname(entryPointPath);
+  let current = path8.dirname(entryPointPath);
   const visited = /* @__PURE__ */ new Set();
   while (!visited.has(current)) {
-    const packageJsonPath = path7.join(current, "package.json");
+    const packageJsonPath = path8.join(current, "package.json");
     if (fs6.existsSync(packageJsonPath)) {
       return current;
     }
     visited.add(current);
-    const parent = path7.dirname(current);
+    const parent = path8.dirname(current);
     if (parent === current) {
       break;
     }
     current = parent;
   }
-  return path7.dirname(entryPointPath);
+  return path8.dirname(entryPointPath);
 }
 function maskSecret(value) {
   if (value.length <= 4) {
@@ -1356,10 +1365,10 @@ var DEFAULT_TIMEOUT_MS2 = 6e4;
 var MAX_RETRIES = 3;
 var RETRYABLE_METHODS = /* @__PURE__ */ new Set(["GET", "HEAD", "OPTIONS", "DELETE"]);
 var API_VERSION_PATH = /\/api\/v\d+\/?$/;
-function webAppUrl(baseUrl, path10) {
+function webAppUrl(baseUrl, path11) {
   const base = new URL(baseUrl);
   const root = API_VERSION_PATH.test(base.pathname) ? base.pathname.replace(API_VERSION_PATH, "/") : "/";
-  return new URL(`${root}app/${path10.replace(/^\//, "")}`, base.origin).toString();
+  return new URL(`${root}app/${path11.replace(/^\//, "")}`, base.origin).toString();
 }
 var SignWellClient = class {
   apiKey;
@@ -1377,20 +1386,20 @@ var SignWellClient = class {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS2;
     this.fetchImpl = options.fetchImplementation ?? fetch;
   }
-  async get(path10, options = {}) {
-    return this.request({ ...options, path: path10, method: "GET" });
+  async get(path11, options = {}) {
+    return this.request({ ...options, path: path11, method: "GET" });
   }
-  async post(path10, body, options = {}) {
-    return this.request({ ...options, path: path10, method: "POST", body });
+  async post(path11, body, options = {}) {
+    return this.request({ ...options, path: path11, method: "POST", body });
   }
-  async put(path10, body, options = {}) {
-    return this.request({ ...options, path: path10, method: "PUT", body });
+  async put(path11, body, options = {}) {
+    return this.request({ ...options, path: path11, method: "PUT", body });
   }
-  async delete(path10, options = {}) {
-    return this.request({ ...options, path: path10, method: "DELETE" });
+  async delete(path11, options = {}) {
+    return this.request({ ...options, path: path11, method: "DELETE" });
   }
-  appUrl(path10) {
-    return webAppUrl(this.baseUrl.toString(), path10);
+  appUrl(path11) {
+    return webAppUrl(this.baseUrl.toString(), path11);
   }
   async request(options) {
     const response = await this.performRequest(options);
@@ -1400,8 +1409,8 @@ var SignWellClient = class {
     const response = await this.performRequest(options);
     return response.arrayBuffer();
   }
-  buildUrl(path10, query) {
-    const cleanPath = path10.replace(/^\//, "");
+  buildUrl(path11, query) {
+    const cleanPath = path11.replace(/^\//, "");
     const url = new URL(cleanPath, this.baseUrl);
     if (query) {
       Object.entries(query).forEach(([key, value]) => {
@@ -1850,7 +1859,7 @@ import { exec } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs7 from "node:fs/promises";
 import os7 from "node:os";
-import path8 from "node:path";
+import path9 from "node:path";
 import process8 from "node:process";
 import { promisify } from "node:util";
 import { ReadResourceResultSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -1974,7 +1983,7 @@ function enforceSizeLimit(size) {
 function guessNameFromUri(uri) {
   try {
     const parsed = new URL(uri);
-    const base = path8.basename(parsed.pathname);
+    const base = path9.basename(parsed.pathname);
     return base || null;
   } catch {
     const trimmed = uri.split("/").pop();
@@ -2047,7 +2056,7 @@ async function readLocalFile(filePath, nameOverride) {
     enforceSizeLimit(stats.size);
     const buffer = await fs7.readFile(filePath);
     return {
-      name: nameOverride ?? path8.basename(filePath),
+      name: nameOverride ?? path9.basename(filePath),
       file_base64: buffer.toString("base64"),
       size_bytes: buffer.byteLength
     };
@@ -2487,13 +2496,13 @@ async function handleSendDraft(client, input2, _extra) {
   }
   try {
     const { document_id, confirm_send: _confirmSend, ...payload } = input2;
-    const path10 = `/documents/${encodeURIComponent(document_id)}`;
-    let data = await client.post(`${path10}/send`, payload);
+    const path11 = `/documents/${encodeURIComponent(document_id)}`;
+    let data = await client.post(`${path11}/send`, payload);
     const warnings = [
       "Status may update asynchronously. If this response still shows Draft, call document_get after a few seconds; do not send again. Recipient send_email is an embedded-signing setting, not an email-delivery receipt."
     ];
     try {
-      data = await client.get(path10, { timeoutMs: 5e3, idempotent: false });
+      data = await client.get(path11, { timeoutMs: 5e3, idempotent: false });
     } catch {
       warnings.push(
         "The send was accepted, but refreshing document status failed. Use document_get to check progress; do not resend."
@@ -3628,7 +3637,7 @@ async function extractPdfText(data) {
 }
 
 // src/index.ts
-var VERSION = true ? "0.3.8" : "dev";
+var VERSION = true ? "0.3.9" : "dev";
 var SERVER_NAME = "signwell";
 var HELP_TEXT2 = `
 SignWell MCP Server v${VERSION}
@@ -3724,7 +3733,7 @@ function installSignalHandlers(server, transport) {
 function isEntryPoint() {
   try {
     const scriptPath = fileURLToPath2(import.meta.url);
-    const invokedPath = realpathSync(path9.resolve(process9.argv[1]));
+    const invokedPath = realpathSync(path10.resolve(process9.argv[1]));
     return invokedPath === scriptPath;
   } catch {
     return false;
