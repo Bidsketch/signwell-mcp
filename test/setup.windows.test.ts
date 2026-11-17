@@ -11,6 +11,36 @@ import {
 } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { LaunchCommand } from "../src/setup/types.ts";
 
+class WindowsSmokeTransport extends StdioClientTransport {
+  private closing?: Promise<void>;
+
+  override close(): Promise<void> {
+    this.closing ??= this.closeTree();
+    return this.closing;
+  }
+
+  private async closeTree(): Promise<void> {
+    try {
+      // The SDK closes only PowerShell, leaving npm and the server holding cwd
+      // open. Kill the tree before super.close() discards the parent's PID,
+      // including when Client.connect() closes automatically after a failure.
+      const pid = this.pid;
+      if (pid !== null) {
+        const result = spawnSync("taskkill.exe", ["/PID", String(pid), "/T", "/F"], {
+          encoding: "utf8",
+          timeout: 10_000,
+        });
+        // 128 means the process has already exited.
+        if (result.error || (result.status !== 0 && result.status !== 128)) {
+          throw new Error(`Windows process cleanup failed: ${result.error ?? result.stderr}`);
+        }
+      }
+    } finally {
+      await super.close();
+    }
+  }
+}
+
 // This integration test installs the checkout's tarball; it needs npm registry access.
 test.skipIf(process.platform !== "win32")(
   "installed Windows launch initializes MCP through powershell.exe and npm",
@@ -74,7 +104,7 @@ console.log(JSON.stringify(buildLaunchCommand(process.argv[1], '', 'node', false
       expect(launch.command).toBe("powershell.exe");
       expect(launch.args.join(" ")).toContain("npx-cli.js");
 
-      const transport = new StdioClientTransport({
+      const transport = new WindowsSmokeTransport({
         ...launch,
         cwd: dir,
         env: {
@@ -97,13 +127,13 @@ console.log(JSON.stringify(buildLaunchCommand(process.argv[1], '', 'node', false
         const { tools } = await client.listTools({}, { timeout: 5_000 });
         expect(tools.some((tool) => tool.name === "document_get")).toBe(true);
       } catch (error) {
-        throw new Error(`Windows launch failed: ${stderr}`, { cause: error });
+        throw new Error(`Windows launch failed: ${String(error)}\n${stderr}`, { cause: error });
       } finally {
         await transport.close();
       }
     } finally {
       await client.close();
-      await fsp.rm(dir, { recursive: true, force: true });
+      await fsp.rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     }
   },
   180_000,
