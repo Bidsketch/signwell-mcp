@@ -15,7 +15,7 @@ import {
   getClaudeDesktopConfigPath,
 } from "../src/setup/claude-desktop.ts";
 import { ALL_CLIENT_KEYS, parseClientKeys } from "../src/setup/clients.ts";
-import { buildPosixLaunch, buildPowerShellLaunch, resolveNpxCli } from "../src/setup/command.ts";
+import { buildPosixLaunch, buildWindowsLaunch, resolveNpxCli } from "../src/setup/command.ts";
 import { applyCursorConfig, buildCursorSnippet, getCursorConfigPath } from "../src/setup/cursor.ts";
 import { summarizeEnvInstructions } from "../src/setup/env.ts";
 import { buildManualSnippet } from "../src/setup/manual.ts";
@@ -165,7 +165,7 @@ describe("setup client snippets", () => {
       runner: "node",
     });
     expect(snippet.snippet).toContain("# POSIX shells");
-    expect(snippet.snippet).toContain("# Windows (PowerShell)");
+    expect(snippet.snippet).toContain("# Windows (Command Prompt");
     expect(snippet.snippet).toContain("SIGNWELL_DEBUG=1");
   });
 });
@@ -177,15 +177,15 @@ describe("launch command helpers", () => {
     expect(result).toContain("'/repo/build/index.js'");
   });
 
-  test("powershell launch emits script", () => {
-    const script = buildPowerShellLaunch("C:/Secrets/.env", "C:/repo/build/index.js", "node", true);
-    expect(script).toContain("Test-Path");
-    expect(script).toContain("'C:/repo/build/index.js'");
-  });
-
-  test("powershell launch runs npx through npm's npx-cli.js", () => {
-    const script = buildPowerShellLaunch("C:/Secrets/.env", "", "node", false);
-    expect(script).toMatch(/& '[^']+' '[^']+npx-cli\.js' -y @signwell\/mcp$/);
+  test("windows launch runs node directly, with no shell wrapper", () => {
+    expect(buildWindowsLaunch("C:/repo/build/index.js", true)).toEqual({
+      command: process.execPath,
+      args: ["C:/repo/build/index.js"],
+    });
+    const { command, args } = buildWindowsLaunch("", false);
+    expect(command).toBe(process.execPath);
+    expect(args[0]).toEndWith("npx-cli.js");
+    expect(args.slice(1)).toEqual(["-y", "@signwell/mcp"]);
   });
 
   test("npx entry point on Windows is npx-cli.js, not the bash shim beside node.exe", () => {
@@ -196,37 +196,16 @@ describe("launch command helpers", () => {
   });
 });
 
-// Runs the generated scripts in a real PowerShell; GitHub's ubuntu runners ship pwsh.
-describe.skipIf(!Bun.which("pwsh"))("powershell launch under pwsh", () => {
-  async function writeFixtures() {
+// Runs the printed instructions in a real PowerShell; GitHub's ubuntu runners ship pwsh.
+test.skipIf(!Bun.which("pwsh"))(
+  "printed Windows env instructions set the variables in PowerShell",
+  async () => {
     const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "signwell-pwsh-"));
-    const envFile = path.join(dir, "signwell.env");
-    const entry = path.join(dir, "entry.mjs");
+    const envFile = path.join(dir, "env");
     await fsp.writeFile(
       envFile,
-      "# SignWell MCP environment variables\r\nSIGNWELL_API_KEY=key=with=equals\r\n\r\nSIGNWELL_API_BASE_URL=https://example.test/api/v1\r\n",
+      "# SignWell MCP environment variables\r\nSIGNWELL_API_KEY=key=with=equals\r\n",
     );
-    await fsp.writeFile(
-      entry,
-      'console.log(process.env.SIGNWELL_API_KEY + "|" + process.env.SIGNWELL_API_BASE_URL);\n',
-    );
-    return { dir, envFile, entry };
-  }
-
-  test("loads the env file and starts node", async () => {
-    const { dir, envFile, entry } = await writeFixtures();
-    try {
-      const script = buildPowerShellLaunch(envFile, entry, "node", true);
-      const result = spawnSync("pwsh", ["-NoProfile", "-Command", script], { encoding: "utf8" });
-      expect(result.stderr).toBe("");
-      expect(result.stdout.trim()).toBe("key=with=equals|https://example.test/api/v1");
-    } finally {
-      await fsp.rm(dir, { recursive: true, force: true });
-    }
-  });
-
-  test("printed env instructions set the variables", async () => {
-    const { dir, envFile } = await writeFixtures();
     try {
       const [line] = summarizeEnvInstructions(envFile, "win32");
       const command = `${line.replace(/^PowerShell: /, "")}; $env:SIGNWELL_API_KEY`;
@@ -236,8 +215,8 @@ describe.skipIf(!Bun.which("pwsh"))("powershell launch under pwsh", () => {
     } finally {
       await fsp.rm(dir, { recursive: true, force: true });
     }
-  });
-});
+  },
+);
 
 describe("client config writers", () => {
   test("claude desktop writer preserves config, merges servers, and backs up existing file", async () => {

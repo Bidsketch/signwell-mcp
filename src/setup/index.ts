@@ -386,6 +386,10 @@ function resolveLaunchEnvironment(flags: Flags): Record<string, string> | undefi
   if (debugValue) {
     env.SIGNWELL_DEBUG = debugValue;
   }
+  // The Windows launch has the server find the env file itself, so it needs the same root.
+  if (process.env.SIGNWELL_MCP_HOME) {
+    env.SIGNWELL_MCP_HOME = path.resolve(process.env.SIGNWELL_MCP_HOME);
+  }
 
   return Object.keys(env).length > 0 ? env : undefined;
 }

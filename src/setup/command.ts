@@ -8,11 +8,6 @@ function shellQuote(value: string): string {
   return `'${escaped}'`;
 }
 
-function psQuote(value: string): string {
-  const escaped = value.replace(/'/g, "''");
-  return `'${escaped}'`;
-}
-
 /**
  * Resolve the absolute path to the `node` binary running this process.
  * GUI-launched apps (Claude Desktop, Cursor, etc.) inherit a minimal PATH
@@ -37,37 +32,6 @@ export function buildPosixLaunch(
   return `set -a && . ${envFile} && set +a && ${runCmd}`;
 }
 
-export function buildPowerShellLaunch(
-  envFilePath: string,
-  entryPoint: string,
-  _runner: Runner,
-  isLocalDev: boolean,
-): string {
-  const envFile = psQuote(envFilePath);
-  const nodeBin = psQuote(resolveNodeBin());
-  const scriptParts = [
-    `$envFile = ${envFile}`,
-    "if (Test-Path -LiteralPath $envFile) {",
-    "  Get-Content -Path $envFile | ForEach-Object {",
-    "    if (-not [string]::IsNullOrWhiteSpace($_) -and -not $_.Trim().StartsWith('#')) {",
-    "      $pair = $_.Split('=',2)",
-    "      if ($pair.Length -eq 2) {",
-    "        $name = $pair[0]",
-    "        $value = $pair[1]",
-    "        Set-Item -LiteralPath ('Env:' + $name) -Value $value",
-    "      }",
-    "    }",
-    "  }",
-    "}",
-  ];
-  // A quoted path is only a string in PowerShell; `&` is what runs it.
-  const runCmd = isLocalDev
-    ? `& ${nodeBin} ${psQuote(entryPoint)}`
-    : `& ${nodeBin} ${psQuote(resolveNpxCli("win32"))} -y @signwell/mcp`;
-  scriptParts.push(runCmd);
-  return scriptParts.join("; ");
-}
-
 /**
  * Resolve the npx JavaScript entry point next to the `node` binary running setup.
  * On Windows the `npx` file beside node.exe is a bash script that node cannot load,
@@ -89,6 +53,15 @@ export function resolveNpxCli(
   return path.posix.join(path.posix.dirname(execPath), "npx");
 }
 
+// No shell on Windows: the server loads the env file setup wrote by itself, and a
+// powershell.exe wrapper stalls the MCP stdio stream under Windows PowerShell 5.1.
+export function buildWindowsLaunch(entryPoint: string, isLocalDev: boolean): LaunchCommand {
+  return {
+    command: resolveNodeBin(),
+    args: isLocalDev ? [entryPoint] : [resolveNpxCli("win32"), "-y", "@signwell/mcp"],
+  };
+}
+
 export function buildLaunchCommand(
   envFilePath: string,
   entryPoint: string,
@@ -96,20 +69,7 @@ export function buildLaunchCommand(
   isLocalDev: boolean,
 ): LaunchCommand {
   if (process.platform === "win32") {
-    return {
-      command: "powershell.exe",
-      args: [
-        "-NoProfile",
-        "-NonInteractive",
-        // MCP owns stdin. Windows PowerShell must not deserialize it or wait for EOF.
-        "-InputFormat",
-        "None",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        buildPowerShellLaunch(envFilePath, entryPoint, runner, isLocalDev),
-      ],
-    };
+    return buildWindowsLaunch(entryPoint, isLocalDev);
   }
 
   return {

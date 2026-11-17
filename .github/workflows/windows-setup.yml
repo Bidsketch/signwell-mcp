@@ -22,5 +22,5 @@ jobs:
         with:
           bun-version: latest
       - run: npm ci
-      - name: Exercise the installed package with Windows PowerShell
+      - name: Exercise the installed package on Windows
         run: npm run test -- test/setup.windows.test.ts

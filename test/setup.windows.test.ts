@@ -21,7 +21,7 @@ class WindowsSmokeTransport extends StdioClientTransport {
 
   private async closeTree(): Promise<void> {
     try {
-      // The SDK closes only PowerShell, leaving npm and the server holding cwd
+      // The SDK closes only the launched node (npx), leaving the server holding cwd
       // open. Kill the tree before super.close() discards the parent's PID,
       // including when Client.connect() closes automatically after a failure.
       const pid = this.pid;
@@ -43,7 +43,7 @@ class WindowsSmokeTransport extends StdioClientTransport {
 
 // This integration test installs the checkout's tarball; it needs npm registry access.
 test.skipIf(process.platform !== "win32")(
-  "installed Windows launch initializes MCP through powershell.exe and npm",
+  "installed Windows launch initializes MCP through node.exe and npx",
   async () => {
     const root = fileURLToPath(new URL("../", import.meta.url));
     const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "signwell Windows smoke "));
@@ -86,7 +86,9 @@ test.skipIf(process.platform !== "win32")(
         naming: "[name].mjs",
       });
       expect(compiled.success).toBe(true);
-      const envFile = path.join(dir, "signwell.env");
+      const mcpHome = path.join(dir, "mcp home");
+      await fsp.mkdir(mcpHome);
+      const envFile = path.join(mcpHome, "env");
       await fsp.writeFile(
         envFile,
         "# Windows setup smoke test\r\n\r\nSIGNWELL_API_KEY=smoke=key\r\nSIGNWELL_API_BASE_URL=https://example.invalid/api/v1\r\n",
@@ -101,21 +103,17 @@ console.log(JSON.stringify(buildLaunchCommand(process.argv[1], '', 'node', false
           envFile,
         ]),
       ) as LaunchCommand;
-      expect(launch.command).toBe("powershell.exe");
-      expect(launch.args.slice(0, 4)).toEqual([
-        "-NoProfile",
-        "-NonInteractive",
-        "-InputFormat",
-        "None",
-      ]);
-      expect(launch.args.join(" ")).toContain("npx-cli.js");
+      expect(launch.command).toEndWith("node.exe");
+      expect(launch.args[0]).toEndWith("npx-cli.js");
 
       const transport = new WindowsSmokeTransport({
         ...launch,
         cwd: dir,
         env: {
           ...getDefaultEnvironment(),
+          // The key must come from the env file the server reads on its own.
           SIGNWELL_API_KEY: "",
+          SIGNWELL_MCP_HOME: mcpHome,
           // An empty offline cache makes falling back to the published package fail.
           npm_config_cache: path.join(dir, "empty-cache"),
           npm_config_offline: "true",

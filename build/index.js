@@ -669,10 +669,6 @@ function shellQuote(value) {
   const escaped = value.replace(/'/g, () => `'\\''`);
   return `'${escaped}'`;
 }
-function psQuote(value) {
-  const escaped = value.replace(/'/g, "''");
-  return `'${escaped}'`;
-}
 function resolveNodeBin() {
   return process5.execPath;
 }
@@ -681,28 +677,6 @@ function buildPosixLaunch(envFilePath, entryPoint, _runner, isLocalDev) {
   const nodeBin = shellQuote(resolveNodeBin());
   const runCmd = isLocalDev ? `${nodeBin} ${shellQuote(entryPoint)}` : `${nodeBin} ${shellQuote(resolveNpxCli("posix"))} -y @signwell/mcp`;
   return `set -a && . ${envFile} && set +a && ${runCmd}`;
-}
-function buildPowerShellLaunch(envFilePath, entryPoint, _runner, isLocalDev) {
-  const envFile = psQuote(envFilePath);
-  const nodeBin = psQuote(resolveNodeBin());
-  const scriptParts = [
-    `$envFile = ${envFile}`,
-    "if (Test-Path -LiteralPath $envFile) {",
-    "  Get-Content -Path $envFile | ForEach-Object {",
-    "    if (-not [string]::IsNullOrWhiteSpace($_) -and -not $_.Trim().StartsWith('#')) {",
-    "      $pair = $_.Split('=',2)",
-    "      if ($pair.Length -eq 2) {",
-    "        $name = $pair[0]",
-    "        $value = $pair[1]",
-    "        Set-Item -LiteralPath ('Env:' + $name) -Value $value",
-    "      }",
-    "    }",
-    "  }",
-    "}"
-  ];
-  const runCmd = isLocalDev ? `& ${nodeBin} ${psQuote(entryPoint)}` : `& ${nodeBin} ${psQuote(resolveNpxCli("win32"))} -y @signwell/mcp`;
-  scriptParts.push(runCmd);
-  return scriptParts.join("; ");
 }
 function resolveNpxCli(flavor, execPath = process5.execPath) {
   if (flavor === "win32") {
@@ -716,22 +690,15 @@ function resolveNpxCli(flavor, execPath = process5.execPath) {
   }
   return path6.posix.join(path6.posix.dirname(execPath), "npx");
 }
+function buildWindowsLaunch(entryPoint, isLocalDev) {
+  return {
+    command: resolveNodeBin(),
+    args: isLocalDev ? [entryPoint] : [resolveNpxCli("win32"), "-y", "@signwell/mcp"]
+  };
+}
 function buildLaunchCommand(envFilePath, entryPoint, runner, isLocalDev) {
   if (process5.platform === "win32") {
-    return {
-      command: "powershell.exe",
-      args: [
-        "-NoProfile",
-        "-NonInteractive",
-        // MCP owns stdin. Windows PowerShell must not deserialize it or wait for EOF.
-        "-InputFormat",
-        "None",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        buildPowerShellLaunch(envFilePath, entryPoint, runner, isLocalDev)
-      ]
-    };
+    return buildWindowsLaunch(entryPoint, isLocalDev);
   }
   return {
     command: "/bin/sh",
@@ -817,26 +784,13 @@ function buildManualSnippet(context) {
     context.runner,
     context.isLocalDev
   );
-  const powerShellScript = buildPowerShellLaunch(
-    context.envFilePath,
-    context.entryPoint,
-    context.runner,
-    context.isLocalDev
-  );
-  const quotedScript = JSON.stringify(powerShellScript);
-  const windowsCommand = [
-    "powershell.exe",
-    "-NoProfile",
-    "-ExecutionPolicy",
-    "Bypass",
-    "-Command",
-    quotedScript
-  ].join(" ");
+  const windowsLaunch = buildWindowsLaunch(context.entryPoint, context.isLocalDev);
+  const windowsCommand = [windowsLaunch.command, ...windowsLaunch.args].map((part) => /[\s"]/.test(part) ? JSON.stringify(part) : part).join(" ");
   const snippetLines = [
     "# POSIX shells",
     posixCommand,
     "",
-    "# Windows (PowerShell)",
+    "# Windows (Command Prompt; the server reads the env file itself)",
     windowsCommand
   ].join("\n");
   const envNotes = context.environment && Object.keys(context.environment).length > 0 ? [
@@ -1115,6 +1069,9 @@ function resolveLaunchEnvironment(flags) {
   const debugValue = flags.debug === true ? "1" : typeof process7.env.SIGNWELL_DEBUG === "string" && process7.env.SIGNWELL_DEBUG.length > 0 ? process7.env.SIGNWELL_DEBUG : void 0;
   if (debugValue) {
     env.SIGNWELL_DEBUG = debugValue;
+  }
+  if (process7.env.SIGNWELL_MCP_HOME) {
+    env.SIGNWELL_MCP_HOME = path8.resolve(process7.env.SIGNWELL_MCP_HOME);
   }
   return Object.keys(env).length > 0 ? env : void 0;
 }
